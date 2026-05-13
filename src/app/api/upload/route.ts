@@ -4,7 +4,9 @@ import { parseExport } from '@/lib/parser'
 import type { ExportType, UploadResult } from '@/types'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 300
+
+const BATCH_SIZE = 500
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,28 +30,32 @@ export async function POST(req: NextRequest) {
     const errors: string[] = []
 
     type UpsertRow = { name: string } & Record<string, unknown>
+    const rows = data as UpsertRow[]
 
     if (type === 'campaigns') {
-      // Upsert — on conflict (name + date) do nothing to avoid overwriting
-      for (const row of data as UpsertRow[]) {
-        const { error } = await supabase
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const batch = rows.slice(i, i + BATCH_SIZE)
+        const { data: result, error } = await supabase
           .from('campaigns')
-          .upsert(row, { onConflict: 'name,date', ignoreDuplicates: true })
+          .upsert(batch, { onConflict: 'name,date', ignoreDuplicates: true })
+          .select('id')
         if (error) {
-          if (error.code === '23505') skipped++      // duplicate
-          else errors.push(`${row.name}: ${error.message}`)
+          errors.push(`Batch ${i + 1}-${i + batch.length}: ${error.message}`)
         } else {
-          inserted++
+          const ins = result?.length ?? 0
+          inserted += ins
+          skipped  += batch.length - ins
         }
       }
     } else {
       // Automations + GoKwik — upsert on name (aggregate level)
-      for (const row of data as UpsertRow[]) {
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const batch = rows.slice(i, i + BATCH_SIZE)
         const { error } = await supabase
           .from('automations')
-          .upsert(row, { onConflict: 'name', ignoreDuplicates: false })
-        if (error) errors.push(`${row.name}: ${error.message}`)
-        else inserted++
+          .upsert(batch, { onConflict: 'name', ignoreDuplicates: false })
+        if (error) errors.push(`Batch ${i + 1}-${i + batch.length}: ${error.message}`)
+        else inserted += batch.length
       }
     }
 
