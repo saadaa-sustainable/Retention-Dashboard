@@ -1,0 +1,82 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --bg-app: #f5f5f1;
+  --bg-panel: #ffffff;
+  --border-subtle: rgba(15, 17, 21, 0.07);
+  --text-strong: #0f1115;
+  --text-muted: #6b6f76;
+  --accent: #2f6fe0;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--text-strong);
+  background-color: var(--bg-app);
+  background-image:
+    radial-gradient(1200px 600px at 100% -10%, rgba(47, 111, 224, 0.05), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(29, 158, 117, 0.045), transparent 60%);
+  background-attachment: fixed;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular numbers everywhere numbers matter */
+table, .tabular, [data-tabular] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'cv02' 1;
+}
+
+/* Selection */
+::selection {
+  background: rgba(47, 111, 224, 0.18);
+  color: #0f1115;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 17, 21, 0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(15, 17, 21, 0.28); background-clip: content-box; }
+
+/* Focus rings — subtle, consistent */
+:where(button, a, input, select, textarea, [role="button"]):focus-visible {
+  outline: 2px solid rgba(47, 111, 224, 0.55);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Tiny utility for fading-in tab content */
+.fade-in {
+  animation: fade-in 220ms ease-out both;
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Recharts tooltip polish */
+.recharts-default-tooltip {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border: 1px solid rgba(15, 17, 21, 0.08) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 24px rgba(15, 17, 21, 0.08) !important;
+  padding: 8px 10px !important;
+}
+.recharts-cartesian-axis-tick-value { fill: #8a8f99; }
