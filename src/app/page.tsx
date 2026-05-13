@@ -92,32 +92,188 @@ function OverviewTab(){
 }
 
 function CampaignsTab(){
+  const [activeId,setActiveId]=useState<string|null>(null)
+  if(activeId) return <CampaignDetailView campaignId={activeId} onBack={()=>setActiveId(null)}/>
+  return <CampaignsCardsView onOpen={setActiveId}/>
+}
+
+type CampaignCard = {
+  campaign_id: string
+  sent: number; delivered: number; seen: number; clicks: number
+  buyers: number; sales: number; orders: number; cost: number
+  send_count: number; segment_count: number; last_date: string
+  delivery_rate: number; open_rate: number; roas: number
+}
+
+function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
+  const campaigns=useDashStore(s=>s.campaigns)
+  const [search,setSearch]=useState('')
+  const [sortBy,setSortBy]=useState<'sales'|'sent'|'roas'|'campaign_id'>('sales')
+
+  const cards=useMemo<CampaignCard[]>(()=>{
+    const map=new Map<string,CampaignCard&{segments:Set<string>}>()
+    for(const r of campaigns){
+      if(!r.campaign_id) continue
+      let m=map.get(r.campaign_id)
+      if(!m){
+        m={campaign_id:r.campaign_id,sent:0,delivered:0,seen:0,clicks:0,buyers:0,sales:0,orders:0,cost:0,send_count:0,segment_count:0,last_date:'',delivery_rate:0,open_rate:0,roas:0,segments:new Set()}
+        map.set(r.campaign_id,m)
+      }
+      m.sent+=r.sent||0; m.delivered+=r.delivered||0; m.seen+=r.seen||0; m.clicks+=r.clicks||0
+      m.buyers+=r.buyers||0; m.sales+=r.sales||0; m.orders+=r.orders||0; m.cost+=r.cost||0
+      m.send_count++
+      if(r.segment) m.segments.add(r.segment)
+      if(r.date && r.date>m.last_date) m.last_date=r.date
+    }
+    return [...map.values()].map(m=>({
+      ...m,
+      segment_count: m.segments.size,
+      delivery_rate: safe(m.delivered,m.sent)*100,
+      open_rate:     safe(m.seen,m.delivered)*100,
+      roas:          safe(m.sales,m.cost),
+    }))
+  },[campaigns])
+
+  const filtered=useMemo(()=>{
+    if(!search) return cards
+    return cards.filter(c=>c.campaign_id.toLowerCase().includes(search))
+  },[cards,search])
+
+  const sorted=useMemo(()=>[...filtered].sort((a,b)=>{
+    if(sortBy==='campaign_id') return a.campaign_id.localeCompare(b.campaign_id)
+    return (b[sortBy] as number) - (a[sortBy] as number)
+  }),[filtered,sortBy])
+
+  return(
+    <div className="fade-in">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{filtered.length}</span> campaigns · Aggregated by campaign ID</p>
+        <div className="flex items-center gap-2">
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value as typeof sortBy)} className="h-8 text-[12px] px-2.5 rounded-lg border border-black/[0.08] bg-white text-gray-700 cursor-pointer hover:border-gray-300 focus:outline-none focus:border-blue-400">
+            <option value="sales">Sort: Sales</option>
+            <option value="sent">Sort: Sent</option>
+            <option value="roas">Sort: ROAS</option>
+            <option value="campaign_id">Sort: Campaign ID</option>
+          </select>
+          <div className="flex items-center gap-1.5 border border-black/[0.08] rounded-lg px-2.5 h-8 bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-colors">
+            <Search size={13} className="text-gray-400" />
+            <input value={search} onChange={e=>setSearch(e.target.value.toLowerCase())} placeholder="Search campaign ID…" className="border-none bg-transparent text-[12px] outline-none w-44 text-gray-700 placeholder:text-gray-400"/>
+          </div>
+        </div>
+      </div>
+
+      {sorted.length===0 ? (
+        <div className="bg-white rounded-xl border border-black/[0.06] py-16 text-center text-[13px] text-gray-400">No campaigns match your search.</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {sorted.map(c=>(
+            <button key={c.campaign_id}
+              onClick={()=>onOpen(c.campaign_id)}
+              className="text-left bg-white rounded-xl border border-black/[0.06] hover:border-blue-300 hover:shadow-md hover:-translate-y-0.5 transition-all p-4 group">
+              <div className="flex items-start justify-between mb-3">
+                <div className="min-w-0">
+                  <p className="text-[15px] font-semibold text-gray-900">{c.campaign_id}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5 tabular-nums">{c.segment_count} segment{c.segment_count===1?'':'s'} · {c.send_count} send{c.send_count===1?'':'s'}</p>
+                </div>
+                <span className="text-gray-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all text-[14px]">→</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                <div>
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide">Sent</p>
+                  <p className="text-[13px] font-semibold text-gray-800 tabular-nums">{fmt(c.sent)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide">Delivered</p>
+                  <p className="text-[13px] font-semibold text-gray-800 tabular-nums">{c.delivery_rate>0?c.delivery_rate.toFixed(1)+'%':'—'}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide">Sales</p>
+                  <p className={`text-[13px] font-semibold tabular-nums ${c.sales>0?'text-green-700':'text-gray-400'}`}>{c.sales>0?cur(c.sales):'—'}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide">ROAS</p>
+                  <div className="mt-0.5"><RoasBadge roas={c.roas||null}/></div>
+                </div>
+              </div>
+              {c.last_date && <p className="text-[10px] text-gray-400 mt-3 pt-2.5 border-t border-black/[0.04]">Last sent · <span className="tabular-nums text-gray-500">{c.last_date}</span></p>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <DefinitionsPanel items={DEFS.campaigns}/>
+    </div>
+  )
+}
+
+function CampaignDetailView({campaignId,onBack}:{campaignId:string,onBack:()=>void}){
   const campaigns=useDashStore(s=>s.campaigns)
   const [search,setSearch]=useState('')
   const [page,setPage]=useState(0)
   const [perPage,setPerPage]=useState(10)
-  const filtered=useMemo(()=>campaigns.filter(r=>!search||r.name.toLowerCase().includes(search)||r.segment.toLowerCase().includes(search)),[campaigns,search])
-  const {sorted,toggle,dir}=useSort(filtered,'sales')
+
+  const scoped=useMemo(()=>campaigns.filter(c=>c.campaign_id===campaignId),[campaigns,campaignId])
+  const filtered=useMemo(()=>scoped.filter(r=>!search||r.name.toLowerCase().includes(search)||r.segment.toLowerCase().includes(search)),[scoped,search])
+  const {sorted,toggle,dir}=useSort(filtered,'date')
+
   const pages=Math.max(1,Math.ceil(sorted.length/perPage))
   useEffect(()=>{ if(page>pages-1) setPage(pages-1) },[pages,page])
   const safePage=Math.min(page,pages-1)
   const paged=sorted.slice(safePage*perPage,(safePage+1)*perPage)
+
+  const totals=useMemo(()=>{
+    const t={sent:0,delivered:0,buyers:0,orders:0,sales:0,cost:0}
+    for(const r of scoped){
+      t.sent+=r.sent||0; t.delivered+=r.delivered||0
+      t.buyers+=r.buyers||0; t.orders+=r.orders||0
+      t.sales+=r.sales||0; t.cost+=r.cost||0
+    }
+    return {...t, delivery_rate: safe(t.delivered,t.sent)*100, roas: safe(t.sales,t.cost)}
+  },[scoped])
+
   return(
-    <div>
+    <div className="fade-in">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-[12px] text-gray-600 hover:text-gray-900 h-8 px-3 rounded-lg border border-black/[0.08] bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors">
+          <span className="text-[14px] leading-none">←</span> Back to campaigns
+        </button>
+        <div>
+          <p className="text-[16px] font-semibold text-gray-900 leading-tight">{campaignId}</p>
+          <p className="text-[11px] text-gray-500">{scoped.length} send{scoped.length===1?'':'s'} · Detailed performance</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+        {([
+          ['Sent',fmt(totals.sent)],
+          ['Delivered',totals.delivery_rate>0?totals.delivery_rate.toFixed(1)+'%':'—'],
+          ['Buyers',fmt(totals.buyers)],
+          ['Orders',fmt(totals.orders)],
+          ['Sales',totals.sales>0?cur(totals.sales):'—'],
+          ['ROAS',totals.roas>0?totals.roas.toFixed(2)+'x':'—'],
+        ] as const).map(([l,v])=>(
+          <div key={l} className="bg-white rounded-lg border border-black/[0.06] px-3 py-2.5">
+            <p className="text-[9px] text-gray-400 uppercase tracking-wide">{l}</p>
+            <p className="text-[14px] font-semibold text-gray-800 tabular-nums mt-0.5">{v}</p>
+          </div>
+        ))}
+      </div>
+
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{filtered.length}</span> campaigns · Included segments only</p>
+        <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{filtered.length}</span> row{filtered.length===1?'':'s'}</p>
         <div className="flex items-center gap-2">
           <select value={perPage} onChange={e=>{setPerPage(+e.target.value);setPage(0)}} className="h-8 text-[12px] px-2.5 rounded-lg border border-black/[0.08] bg-white text-gray-700 cursor-pointer hover:border-gray-300 focus:outline-none focus:border-blue-400">{[10,25,50,100].map(n=><option key={n} value={n}>{n} per page</option>)}</select>
           <div className="flex items-center gap-1.5 border border-black/[0.08] rounded-lg px-2.5 h-8 bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-colors">
             <Search size={13} className="text-gray-400" />
-            <input value={search} onChange={e=>{setSearch(e.target.value.toLowerCase());setPage(0)}} placeholder="Search…" className="border-none bg-transparent text-[12px] outline-none w-40 text-gray-700 placeholder:text-gray-400"/>
+            <input value={search} onChange={e=>{setSearch(e.target.value.toLowerCase());setPage(0)}} placeholder="Search segment…" className="border-none bg-transparent text-[12px] outline-none w-44 text-gray-700 placeholder:text-gray-400"/>
           </div>
         </div>
       </div>
+
       <Panel>
         <div className="overflow-x-auto"><table className="w-full" style={{minWidth:'900px'}}>
           <thead className="bg-gray-50/60 sticky top-0 z-[1]"><tr>
-            <Th right={false} onClick={()=>toggle('name')} sortDir={dir('name')}>Campaign</Th>
+            <Th right={false} onClick={()=>toggle('segment')} sortDir={dir('segment')}>Segment</Th>
             <Th onClick={()=>toggle('date')} sortDir={dir('date')}>Date</Th>
             <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
             <Th onClick={()=>toggle('delivered')} sortDir={dir('delivered')}>Delivered</Th>
@@ -131,7 +287,7 @@ function CampaignsTab(){
           </tr></thead>
           <tbody>{paged.map((r,i)=>(
             <tr key={i} className="hover:bg-blue-50/40 transition-colors">
-              <Td right={false}><p className="font-semibold text-[12px] truncate max-w-[160px]" title={r.name}>{r.campaign_id}</p><p className="text-[10px] text-gray-400 truncate max-w-[160px]">{r.segment}</p></Td>
+              <Td right={false}><p className="text-[12px] truncate max-w-[220px] text-gray-800" title={r.segment}>{r.segment||'—'}</p><p className="text-[10px] text-gray-400 truncate max-w-[220px]" title={r.name}>{r.offer} · {r.format}</p></Td>
               <Td className="text-gray-500 whitespace-nowrap">{r.date?.slice(5)}</Td>
               <Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
               <Td><DrBadge dr={deliveryRate(r)}/></Td>
@@ -143,7 +299,9 @@ function CampaignsTab(){
               <Td>{cur(r.cost)}</Td>
               <Td><RoasBadge roas={r.roas}/></Td>
             </tr>
-          ))}</tbody>
+          ))}
+          {paged.length===0 && <tr><td colSpan={12} className="text-center py-10 text-[12px] text-gray-400">No rows match your filters.</td></tr>}
+          </tbody>
         </table></div>
         <div className="flex items-center justify-between px-4 py-3 border-t border-black/[0.06] text-[11px] text-gray-500 flex-wrap gap-2 bg-gray-50/40">
           <span className="tabular-nums">{sorted.length===0?'0':`${safePage*perPage+1}–${Math.min((safePage+1)*perPage,sorted.length)}`} of {sorted.length}</span>
