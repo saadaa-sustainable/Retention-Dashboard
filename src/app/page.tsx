@@ -41,12 +41,12 @@ function OverviewTab(){
   return(
     <div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 mb-5">
-        <KpiCard icon={<ShoppingCart size={18}/>} label="Total Orders"    value={fmt(kpi.total_orders)}    smartRetry={{delta:'+209',pct:'13.60%'}}/>
-        <KpiCard icon={<Tag size={18}/>}          label="Total Sales"     value={cur(kpi.total_sales)}     smartRetry={{delta:'+₹3,20,820',pct:'15.00%'}}/>
-        <KpiCard icon={<ShoppingBag size={18}/>}  label="Total Buyers"    value={fmt(kpi.total_buyers)}    smartRetry={{delta:'+207',pct:'14.04%'}}/>
+        <KpiCard icon={<ShoppingCart size={18}/>} label="Total Orders"    value={fmt(kpi.total_orders)}/>
+        <KpiCard icon={<Tag size={18}/>}          label="Total Sales"     value={cur(kpi.total_sales)}/>
+        <KpiCard icon={<ShoppingBag size={18}/>}  label="Total Buyers"    value={fmt(kpi.total_buyers)}/>
         <KpiCard icon={<MessageCircle size={18}/>} label="Messages Sent"  value={fmt(kpi.total_sent)}/>
-        <KpiCard icon={<Play size={18}/>}          label="Msg Delivered"  value={fmt(kpi.total_delivered)} smartRetry={{delta:'+63,002',pct:'3.07%'}}/>
-        <KpiCard icon={<UserPlus size={18}/>}      label="New Customers"  value={fmt(kpi.new_customers)}   smartRetry={{delta:'+83',pct:'13.52%'}}/>
+        <KpiCard icon={<Play size={18}/>}          label="Msg Delivered"  value={fmt(kpi.total_delivered)}/>
+        <KpiCard icon={<UserPlus size={18}/>}      label="New Customers"  value={fmt(kpi.new_customers)}/>
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
