@@ -28,6 +28,7 @@ export default function TopBar({ tab, campaignIds, segments, offers, dates }: To
   const hasFilter = Object.values(filters).some(v => v !== 'ALL' && v !== '')
   const sortedDates = useMemo(() => [...dates].sort().reverse(), [dates])
 
+  const rangeActive = filters.date_from !== '' || filters.date_to !== ''
   const sel = (label: string, key: keyof typeof filters, options: string[], display?: (v:string)=>string) => {
     const active = filters[key] !== 'ALL' && filters[key] !== ''
     return (
@@ -46,6 +47,35 @@ export default function TopBar({ tab, campaignIds, segments, offers, dates }: To
     )
   }
 
+  const dateRangeInputs = (
+    <div className="grid grid-cols-[minmax(132px,160px)_minmax(132px,160px)] gap-2">
+      <div>
+        <label className="sr-only" htmlFor="date_from">Date from</label>
+        <input
+          id="date_from"
+          type="date"
+          value={filters.date_from}
+          onChange={e => setFilter('date_from', e.target.value)}
+          className={`h-8 text-[12px] rounded-lg border px-2.5 bg-white text-gray-700 transition-colors focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100
+            ${rangeActive ? 'border-blue-300 bg-blue-50/60 text-blue-700 font-medium' : 'border-black/[0.1]'}`}
+          aria-label="Date from"
+        />
+      </div>
+      <div>
+        <label className="sr-only" htmlFor="date_to">Date to</label>
+        <input
+          id="date_to"
+          type="date"
+          value={filters.date_to}
+          onChange={e => setFilter('date_to', e.target.value)}
+          className={`h-8 text-[12px] rounded-lg border px-2.5 bg-white text-gray-700 transition-colors focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100
+            ${rangeActive ? 'border-blue-300 bg-blue-50/60 text-blue-700 font-medium' : 'border-black/[0.1]'}`}
+          aria-label="Date to"
+        />
+      </div>
+    </div>
+  )
+
   return (
     <div className="bg-white/80 backdrop-blur-md border-b border-black/[0.06] px-6 py-3.5 flex items-center justify-between gap-4 flex-wrap flex-shrink-0 sticky top-0 z-20">
       <div>
@@ -54,6 +84,7 @@ export default function TopBar({ tab, campaignIds, segments, offers, dates }: To
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         {sel('All Dates',       'date',        sortedDates, d => d.slice(5))}
+        {dateRangeInputs}
         {sel('All Channels',    'channel',     ['whatsapp','sms','email'])}
         {sel('All Campaign IDs','campaign_id', campaignIds)}
         {sel('All Segments',    'segment',     segments, s => s.length > 30 ? s.slice(0,30)+'…' : s)}

@@ -46,7 +46,28 @@ export const useDashStore = create<DashStore>((set, get) => ({
   setError:       (error)       => set({ error }),
 
   setFilter: (key, value) =>
-    set(s => ({ filters: { ...s.filters, [key]: value } })),
+    set(s => {
+      if (key === 'date') {
+        return {
+          filters: {
+            ...s.filters,
+            date: value,
+            date_from: '',
+            date_to: '',
+          },
+        }
+      }
+      if (key === 'date_from' || key === 'date_to') {
+        return {
+          filters: {
+            ...s.filters,
+            date: 'ALL',
+            [key]: value,
+          },
+        }
+      }
+      return { filters: { ...s.filters, [key]: value } }
+    }),
 
   clearFilters: () => set({ filters: DEFAULT_FILTERS }),
 
