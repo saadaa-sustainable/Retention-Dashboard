@@ -26,6 +26,17 @@ function useSort<T>(data: T[], defaultCol: keyof T, defaultDir: 'asc'|'desc' = '
   return {sorted,toggle,dir}
 }
 
+function pageWindow(cur:number,total:number):(number|'…')[]{
+  if(total<=7) return Array.from({length:total},(_,i)=>i)
+  const last=total-1, out:(number|'…')[]=[0]
+  const l=Math.max(1,cur-1), r=Math.min(last-1,cur+1)
+  if(l>1) out.push('…')
+  for(let i=l;i<=r;i++) out.push(i)
+  if(r<last-1) out.push('…')
+  out.push(last)
+  return out
+}
+
 function OverviewTab(){
   const campaigns=useDashStore(s=>s.campaigns)
   const kpi=computeKpis(campaigns)
@@ -87,8 +98,10 @@ function CampaignsTab(){
   const [perPage,setPerPage]=useState(10)
   const filtered=useMemo(()=>campaigns.filter(r=>!search||r.name.toLowerCase().includes(search)||r.segment.toLowerCase().includes(search)),[campaigns,search])
   const {sorted,toggle,dir}=useSort(filtered,'sales')
-  const pages=Math.ceil(sorted.length/perPage)
-  const paged=sorted.slice(page*perPage,(page+1)*perPage)
+  const pages=Math.max(1,Math.ceil(sorted.length/perPage))
+  useEffect(()=>{ if(page>pages-1) setPage(pages-1) },[pages,page])
+  const safePage=Math.min(page,pages-1)
+  const paged=sorted.slice(safePage*perPage,(safePage+1)*perPage)
   return(
     <div>
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -133,11 +146,14 @@ function CampaignsTab(){
           ))}</tbody>
         </table></div>
         <div className="flex items-center justify-between px-4 py-3 border-t border-black/[0.06] text-[11px] text-gray-500 flex-wrap gap-2 bg-gray-50/40">
-          <span className="tabular-nums">{page*perPage+1}–{Math.min((page+1)*perPage,sorted.length)} of {sorted.length}</span>
-          <div className="flex gap-1">
-            <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={page===0} className="min-w-[28px] h-7 px-2 rounded-md border border-black/[0.08] bg-white disabled:opacity-40 hover:bg-gray-50 hover:border-gray-300 transition-colors">←</button>
-            {Array.from({length:pages},(_,i)=><button key={i} onClick={()=>setPage(i)} className={`min-w-[28px] h-7 px-2 rounded-md border tabular-nums transition-colors ${i===page?'border-blue-500 bg-blue-500 text-white font-medium shadow-sm':'border-black/[0.08] bg-white hover:bg-gray-50 hover:border-gray-300'}`}>{i+1}</button>)}
-            <button onClick={()=>setPage(p=>Math.min(pages-1,p+1))} disabled={page>=pages-1} className="min-w-[28px] h-7 px-2 rounded-md border border-black/[0.08] bg-white disabled:opacity-40 hover:bg-gray-50 hover:border-gray-300 transition-colors">→</button>
+          <span className="tabular-nums">{sorted.length===0?'0':`${safePage*perPage+1}–${Math.min((safePage+1)*perPage,sorted.length)}`} of {sorted.length}</span>
+          <div className="flex gap-1 items-center">
+            <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={safePage===0} className="min-w-[28px] h-7 px-2 rounded-md border border-black/[0.08] bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 hover:border-gray-300 transition-colors">←</button>
+            {pageWindow(safePage,pages).map((p,i)=>p==='…'
+              ?<span key={`e${i}`} className="min-w-[20px] h-7 px-1 flex items-center justify-center text-gray-400 tabular-nums select-none">…</span>
+              :<button key={p} onClick={()=>setPage(p)} className={`min-w-[28px] h-7 px-2 rounded-md border tabular-nums transition-colors ${p===safePage?'border-blue-500 bg-blue-500 text-white font-medium shadow-sm':'border-black/[0.08] bg-white hover:bg-gray-50 hover:border-gray-300'}`}>{p+1}</button>
+            )}
+            <button onClick={()=>setPage(p=>Math.min(pages-1,p+1))} disabled={safePage>=pages-1} className="min-w-[28px] h-7 px-2 rounded-md border border-black/[0.08] bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 hover:border-gray-300 transition-colors">→</button>
           </div>
         </div>
       </Panel>
