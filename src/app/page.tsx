@@ -43,19 +43,39 @@ const SEGMENT_CATEGORIES = [
 ] as const
 type SegmentCategory = typeof SEGMENT_CATEGORIES[number]
 
-function categorize(segment:string):SegmentCategory{
+// Order matters: longer / more specific tokens before their prefixes
+// (e.g. 1000<LTV<2000 before 0<LTV<1000 so substring search in `name` picks the right one).
+const CATEGORY_TOKENS: readonly [string, SegmentCategory][] = [
+  ['1000<LTV<2000','1000<LTV<2000'],
+  ['2000<LTV<3000','2000<LTV<3000'],
+  ['3000<LTV<4000','3000<LTV<4000'],
+  ['0<LTV<1000','0<LTV<1000'],
+  ['4000<LTV','4000<LTV'],
+  ['ATC','ATC'],
+  ['ABC','ABC'],
+  ['CNB','CNB'],
+  ['DNC','DNC'],
+  ['RNC','RNC'],
+  ['failed','failed'],
+]
+
+function categorize(segment:string, name?:string):SegmentCategory{
   const s=(segment||'').trim()
-  if(/^0<LTV<1000\b/i.test(s))    return '0<LTV<1000'
-  if(/^1000<LTV<2000\b/i.test(s)) return '1000<LTV<2000'
-  if(/^2000<LTV<3000\b/i.test(s)) return '2000<LTV<3000'
-  if(/^3000<LTV<4000\b/i.test(s)) return '3000<LTV<4000'
-  if(/^4000<LTV\b/i.test(s))      return '4000<LTV'
-  if(/^ATC\b/i.test(s))           return 'ATC'
-  if(/^ABC\b/i.test(s))           return 'ABC'
-  if(/^CNB\b/i.test(s))           return 'CNB'
-  if(/^DNC\b/i.test(s))           return 'DNC'
-  if(/^RNC\b/i.test(s))           return 'RNC'
-  if(/failed/i.test(s))           return 'failed'
+  // 1) Cleanest signal: the segment field itself starts with a known token
+  for(const [token,cat] of CATEGORY_TOKENS){
+    if(s.startsWith(token)) return cat
+  }
+  // 2) Fallback: scan the full campaign name for the earliest token occurrence
+  //    (handles rows where the segment field is missing or doesn't start with the token)
+  if(name){
+    const n=name.trim()
+    let best:{pos:number,cat:SegmentCategory}|null=null
+    for(const [token,cat] of CATEGORY_TOKENS){
+      const pos=n.indexOf(token)
+      if(pos>=0 && (!best || pos<best.pos)) best={pos,cat}
+    }
+    if(best) return best.cat
+  }
   return 'Other'
 }
 
@@ -255,7 +275,7 @@ function CampaignCategoriesView({campaignId,onBack,onOpenCategory}:{campaignId:s
   const cards=useMemo<CategoryCard[]>(()=>{
     const map=new Map<SegmentCategory,CategoryCard&{segments:Set<string>}>()
     for(const r of scoped){
-      const cat=categorize(r.segment)
+      const cat=categorize(r.segment,r.name)
       let m=map.get(cat)
       if(!m){
         m={category:cat,sent:0,delivered:0,seen:0,clicks:0,buyers:0,sales:0,orders:0,cost:0,row_count:0,segment_count:0,delivery_rate:0,open_rate:0,roas:0,segments:new Set()}
@@ -357,7 +377,7 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
   const [page,setPage]=useState(0)
   const [perPage,setPerPage]=useState(10)
 
-  const scoped=useMemo(()=>campaigns.filter(c=>c.campaign_id===campaignId && categorize(c.segment)===category),[campaigns,campaignId,category])
+  const scoped=useMemo(()=>campaigns.filter(c=>c.campaign_id===campaignId && categorize(c.segment,c.name)===category),[campaigns,campaignId,category])
   const filtered=useMemo(()=>scoped.filter(r=>!search||r.name.toLowerCase().includes(search)||r.segment.toLowerCase().includes(search)),[scoped,search])
   const {sorted,toggle,dir}=useSort(filtered,'date')
 
