@@ -37,6 +37,28 @@ function pageWindow(cur:number,total:number):(number|'…')[]{
   return out
 }
 
+const SEGMENT_CATEGORIES = [
+  '0<LTV<1000','1000<LTV<2000','2000<LTV<3000','3000<LTV<4000','4000<LTV',
+  'ATC','ABC','CNB','DNC','RNC','failed','Other',
+] as const
+type SegmentCategory = typeof SEGMENT_CATEGORIES[number]
+
+function categorize(segment:string):SegmentCategory{
+  const s=(segment||'').trim()
+  if(/^0<LTV<1000\b/i.test(s))    return '0<LTV<1000'
+  if(/^1000<LTV<2000\b/i.test(s)) return '1000<LTV<2000'
+  if(/^2000<LTV<3000\b/i.test(s)) return '2000<LTV<3000'
+  if(/^3000<LTV<4000\b/i.test(s)) return '3000<LTV<4000'
+  if(/^4000<LTV\b/i.test(s))      return '4000<LTV'
+  if(/^ATC\b/i.test(s))           return 'ATC'
+  if(/^ABC\b/i.test(s))           return 'ABC'
+  if(/^CNB\b/i.test(s))           return 'CNB'
+  if(/^DNC\b/i.test(s))           return 'DNC'
+  if(/^RNC\b/i.test(s))           return 'RNC'
+  if(/failed/i.test(s))           return 'failed'
+  return 'Other'
+}
+
 function OverviewTab(){
   const campaigns=useDashStore(s=>s.campaigns)
   const kpi=computeKpis(campaigns)
@@ -93,7 +115,9 @@ function OverviewTab(){
 
 function CampaignsTab(){
   const [activeId,setActiveId]=useState<string|null>(null)
-  if(activeId) return <CampaignDetailView campaignId={activeId} onBack={()=>setActiveId(null)}/>
+  const [activeCat,setActiveCat]=useState<SegmentCategory|null>(null)
+  if(activeId && activeCat) return <CategoryDetailView campaignId={activeId} category={activeCat} onBack={()=>setActiveCat(null)} onBackToCampaigns={()=>{setActiveCat(null);setActiveId(null)}}/>
+  if(activeId) return <CampaignCategoriesView campaignId={activeId} onBack={()=>setActiveId(null)} onOpenCategory={setActiveCat}/>
   return <CampaignsCardsView onOpen={setActiveId}/>
 }
 
@@ -206,13 +230,134 @@ function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
   )
 }
 
-function CampaignDetailView({campaignId,onBack}:{campaignId:string,onBack:()=>void}){
+type CategoryCard = {
+  category: SegmentCategory
+  sent: number; delivered: number; seen: number; clicks: number
+  buyers: number; sales: number; orders: number; cost: number
+  row_count: number; segment_count: number
+  delivery_rate: number; open_rate: number; roas: number
+}
+
+function CampaignCategoriesView({campaignId,onBack,onOpenCategory}:{campaignId:string,onBack:()=>void,onOpenCategory:(c:SegmentCategory)=>void}){
+  const campaigns=useDashStore(s=>s.campaigns)
+  const scoped=useMemo(()=>campaigns.filter(c=>c.campaign_id===campaignId),[campaigns,campaignId])
+
+  const totals=useMemo(()=>{
+    const t={sent:0,delivered:0,buyers:0,orders:0,sales:0,cost:0}
+    for(const r of scoped){
+      t.sent+=r.sent||0; t.delivered+=r.delivered||0
+      t.buyers+=r.buyers||0; t.orders+=r.orders||0
+      t.sales+=r.sales||0; t.cost+=r.cost||0
+    }
+    return {...t, delivery_rate: safe(t.delivered,t.sent)*100, roas: safe(t.sales,t.cost)}
+  },[scoped])
+
+  const cards=useMemo<CategoryCard[]>(()=>{
+    const map=new Map<SegmentCategory,CategoryCard&{segments:Set<string>}>()
+    for(const r of scoped){
+      const cat=categorize(r.segment)
+      let m=map.get(cat)
+      if(!m){
+        m={category:cat,sent:0,delivered:0,seen:0,clicks:0,buyers:0,sales:0,orders:0,cost:0,row_count:0,segment_count:0,delivery_rate:0,open_rate:0,roas:0,segments:new Set()}
+        map.set(cat,m)
+      }
+      m.sent+=r.sent||0; m.delivered+=r.delivered||0; m.seen+=r.seen||0; m.clicks+=r.clicks||0
+      m.buyers+=r.buyers||0; m.sales+=r.sales||0; m.orders+=r.orders||0; m.cost+=r.cost||0
+      m.row_count++
+      if(r.segment) m.segments.add(r.segment)
+    }
+    return SEGMENT_CATEGORIES
+      .map(c=>map.get(c))
+      .filter((m):m is CategoryCard&{segments:Set<string>}=>!!m)
+      .map(m=>({
+        ...m,
+        segment_count: m.segments.size,
+        delivery_rate: safe(m.delivered,m.sent)*100,
+        open_rate:     safe(m.seen,m.delivered)*100,
+        roas:          safe(m.sales,m.cost),
+      }))
+  },[scoped])
+
+  return(
+    <div className="fade-in">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-[12px] text-gray-600 hover:text-gray-900 h-8 px-3 rounded-lg border border-black/[0.08] bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors">
+          <span className="text-[14px] leading-none">←</span> Back to campaigns
+        </button>
+        <div>
+          <p className="text-[16px] font-semibold text-gray-900 leading-tight">{campaignId}</p>
+          <p className="text-[11px] text-gray-500">{cards.length} categor{cards.length===1?'y':'ies'} · {scoped.length} send{scoped.length===1?'':'s'}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+        {([
+          ['Sent',fmt(totals.sent)],
+          ['Delivered',totals.delivery_rate>0?totals.delivery_rate.toFixed(1)+'%':'—'],
+          ['Buyers',fmt(totals.buyers)],
+          ['Orders',fmt(totals.orders)],
+          ['Sales',totals.sales>0?cur(totals.sales):'—'],
+          ['ROAS',totals.roas>0?totals.roas.toFixed(2)+'x':'—'],
+        ] as const).map(([l,v])=>(
+          <div key={l} className="bg-white rounded-lg border border-black/[0.06] px-3 py-2.5">
+            <p className="text-[9px] text-gray-400 uppercase tracking-wide">{l}</p>
+            <p className="text-[14px] font-semibold text-gray-800 tabular-nums mt-0.5">{v}</p>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[12px] text-gray-500 mb-3">Pick a segment category to see detailed rows</p>
+
+      {cards.length===0 ? (
+        <div className="bg-white rounded-xl border border-black/[0.06] py-16 text-center text-[13px] text-gray-400">No segments found for this campaign.</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {cards.map(c=>(
+            <button key={c.category}
+              onClick={()=>onOpenCategory(c.category)}
+              className="text-left bg-white rounded-xl border border-black/[0.06] hover:border-blue-300 hover:shadow-md hover:-translate-y-0.5 transition-all p-4 group">
+              <div className="flex items-start justify-between mb-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-gray-900 truncate" title={c.category}>{c.category}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5 tabular-nums">{c.segment_count} segment{c.segment_count===1?'':'s'} · {c.row_count} row{c.row_count===1?'':'s'}</p>
+                </div>
+                <span className="text-gray-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all text-[14px]">→</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                <div>
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide">Sent</p>
+                  <p className="text-[13px] font-semibold text-gray-800 tabular-nums">{fmt(c.sent)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide">Delivered</p>
+                  <p className="text-[13px] font-semibold text-gray-800 tabular-nums">{c.delivery_rate>0?c.delivery_rate.toFixed(1)+'%':'—'}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide">Sales</p>
+                  <p className={`text-[13px] font-semibold tabular-nums ${c.sales>0?'text-green-700':'text-gray-400'}`}>{c.sales>0?cur(c.sales):'—'}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide">ROAS</p>
+                  <div className="mt-0.5"><RoasBadge roas={c.roas||null}/></div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <DefinitionsPanel items={DEFS.campaigns}/>
+    </div>
+  )
+}
+
+function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{campaignId:string,category:SegmentCategory,onBack:()=>void,onBackToCampaigns:()=>void}){
   const campaigns=useDashStore(s=>s.campaigns)
   const [search,setSearch]=useState('')
   const [page,setPage]=useState(0)
   const [perPage,setPerPage]=useState(10)
 
-  const scoped=useMemo(()=>campaigns.filter(c=>c.campaign_id===campaignId),[campaigns,campaignId])
+  const scoped=useMemo(()=>campaigns.filter(c=>c.campaign_id===campaignId && categorize(c.segment)===category),[campaigns,campaignId,category])
   const filtered=useMemo(()=>scoped.filter(r=>!search||r.name.toLowerCase().includes(search)||r.segment.toLowerCase().includes(search)),[scoped,search])
   const {sorted,toggle,dir}=useSort(filtered,'date')
 
@@ -235,12 +380,20 @@ function CampaignDetailView({campaignId,onBack}:{campaignId:string,onBack:()=>vo
     <div className="fade-in">
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <button onClick={onBack} className="flex items-center gap-1.5 text-[12px] text-gray-600 hover:text-gray-900 h-8 px-3 rounded-lg border border-black/[0.08] bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors">
-          <span className="text-[14px] leading-none">←</span> Back to campaigns
+          <span className="text-[14px] leading-none">←</span> Back to categories
         </button>
-        <div>
-          <p className="text-[16px] font-semibold text-gray-900 leading-tight">{campaignId}</p>
-          <p className="text-[11px] text-gray-500">{scoped.length} send{scoped.length===1?'':'s'} · Detailed performance</p>
+        <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
+          <button onClick={onBackToCampaigns} className="hover:text-blue-600 transition-colors">Campaigns</button>
+          <span>›</span>
+          <button onClick={onBack} className="hover:text-blue-600 transition-colors">{campaignId}</button>
+          <span>›</span>
+          <span className="text-gray-700">{category}</span>
         </div>
+      </div>
+
+      <div className="mb-4">
+        <p className="text-[16px] font-semibold text-gray-900 leading-tight">{campaignId} · {category}</p>
+        <p className="text-[11px] text-gray-500">{scoped.length} row{scoped.length===1?'':'s'}</p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
