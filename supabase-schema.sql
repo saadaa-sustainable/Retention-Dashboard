@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS automations (
   name              TEXT NOT NULL UNIQUE,   -- automation name is unique
   type              TEXT NOT NULL DEFAULT 'standard', -- standard | cart_recovery
   channel           TEXT NOT NULL DEFAULT 'whatsapp',
+  date              DATE,                   -- snapshot "as-of" date (latest upload wins)
   sent              INTEGER NOT NULL DEFAULT 0,
   delivered         INTEGER NOT NULL DEFAULT 0,
   seen              INTEGER NOT NULL DEFAULT 0,
@@ -55,6 +56,8 @@ CREATE TABLE IF NOT EXISTS automations (
   recovered_carts   INTEGER NOT NULL DEFAULT 0,
   ingested_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Migration for existing installs (run once if your table already exists):
+--   ALTER TABLE automations ADD COLUMN IF NOT EXISTS date DATE;
 
 -- ── raw_exports ────────────────────────────────────────────────────────────
 -- Stores every uploaded CSV file for audit / re-ingestion

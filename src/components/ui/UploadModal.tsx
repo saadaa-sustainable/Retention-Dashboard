@@ -9,11 +9,15 @@ interface UploadModalProps { onClose: () => void }
 export default function UploadModal({ onClose }: UploadModalProps) {
   const [file, setFile]       = useState<File | null>(null)
   const [type, setType]       = useState<ExportType>('campaigns')
+  const [snapshotDate, setSnapshotDate] = useState('')
   const [status, setStatus]   = useState<'idle'|'uploading'|'done'|'error'>('idle')
   const [result, setResult]   = useState<UploadResult | null>(null)
   const [errMsg, setErrMsg]   = useState('')
   const inputRef              = useRef<HTMLInputElement>(null)
   const { fetchCampaigns, fetchAutomations } = useDashStore()
+
+  const needsDate = type === 'automations' || type === 'gokwik_carts'
+  const dateValid = !needsDate || /^\d{4}-\d{2}-\d{2}$/.test(snapshotDate)
 
   const handleFile = (f: File) => {
     setFile(f)
@@ -32,11 +36,17 @@ export default function UploadModal({ onClose }: UploadModalProps) {
 
   const handleUpload = async () => {
     if (!file) return
+    if (needsDate && !dateValid) {
+      setErrMsg('Please pick the date this snapshot belongs to')
+      setStatus('error')
+      return
+    }
     setStatus('uploading')
     try {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('type', type)
+      if (needsDate) fd.append('date', snapshotDate)
       const res  = await fetch('/api/upload', { method: 'POST', body: fd })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Upload failed')
@@ -79,6 +89,30 @@ export default function UploadModal({ onClose }: UploadModalProps) {
             ))}
           </div>
         </div>
+
+        {/* Snapshot date — only for automations & gokwik (campaigns derive date per-row from the CSV) */}
+        {needsDate && (status === 'idle' || status === 'error') && (
+          <div className="mb-4">
+            <label htmlFor="snapshot-date" className="text-[12px] font-medium text-gray-600 mb-1.5 block">
+              Snapshot date <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="snapshot-date"
+              type="date"
+              value={snapshotDate}
+              onChange={e => setSnapshotDate(e.target.value)}
+              max={new Date().toISOString().slice(0,10)}
+              className={`w-full px-3 py-2 text-[13px] rounded-lg border bg-white focus:outline-none transition-colors ${
+                snapshotDate && !dateValid
+                  ? 'border-red-300 focus:border-red-500'
+                  : 'border-black/10 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
+              }`}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              The date this data belongs to. Re-uploading the same automation with a new date will overwrite its current snapshot.
+            </p>
+          </div>
+        )}
 
         {/* Drop zone */}
         {status === 'idle' || status === 'error' ? (
@@ -152,7 +186,7 @@ export default function UploadModal({ onClose }: UploadModalProps) {
               </button>
               <button
                 onClick={handleUpload}
-                disabled={!file || status === 'uploading'}
+                disabled={!file || status === 'uploading' || (needsDate && !dateValid)}
                 className="px-4 py-2 text-[13px] bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Upload & Ingest

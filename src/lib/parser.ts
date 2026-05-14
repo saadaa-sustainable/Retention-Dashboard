@@ -91,12 +91,13 @@ export function parseCampaignsCSV(raw: string): Omit<Campaign, 'id' | 'ingested_
 }
 
 // ── Parse automations CSV ─────────────────────────────────────────────────
-export function parseAutomationsCSV(raw: string): Omit<Automation, 'id' | 'ingested_at'>[] {
+export function parseAutomationsCSV(raw: string, snapshotDate: string | null = null): Omit<Automation, 'id' | 'ingested_at'>[] {
   const result = Papa.parse(raw, { header: true, skipEmptyLines: true })
   return (result.data as Record<string, unknown>[]).map(row => ({
     name:             String(row['Name'] || '').trim(),
     type:             'standard' as const,
     channel:          String(row['Channel'] || 'whatsapp').toLowerCase() as Automation['channel'],
+    date:             snapshotDate,
     sent:             toNum(row['Sent']),
     delivered:        toNum(row['Delivered']),
     seen:             toNum(row['Seen']),
@@ -114,12 +115,13 @@ export function parseAutomationsCSV(raw: string): Omit<Automation, 'id' | 'inges
 }
 
 // ── Parse GoKwik carts CSV ────────────────────────────────────────────────
-export function parseGokwikCSV(raw: string): Omit<Automation, 'id' | 'ingested_at'>[] {
+export function parseGokwikCSV(raw: string, snapshotDate: string | null = null): Omit<Automation, 'id' | 'ingested_at'>[] {
   const result = Papa.parse(raw, { header: true, skipEmptyLines: true })
   return (result.data as Record<string, unknown>[]).map(row => ({
     name:             String(row['Name'] || '').trim(),
     type:             'cart_recovery' as const,
     channel:          String(row['Channel'] || 'whatsapp').toLowerCase() as Automation['channel'],
+    date:             snapshotDate,
     sent:             toNum(row['Sent']),
     delivered:        toNum(row['Delivered']),
     seen:             toNum(row['Seen']),
@@ -137,12 +139,12 @@ export function parseGokwikCSV(raw: string): Omit<Automation, 'id' | 'ingested_a
 }
 
 // ── Auto-detect and parse any export ──────────────────────────────────────
-export function parseExport(raw: string, forceType?: ExportType) {
+export function parseExport(raw: string, forceType?: ExportType, snapshotDate: string | null = null) {
   const firstLine = raw.split('\n')[0]
   const headers   = firstLine.split(',').map(h => h.replace(/"/g, '').trim())
   const type      = forceType || detectExportType(headers)
 
   if (type === 'campaigns')    return { type, data: parseCampaignsCSV(raw) }
-  if (type === 'gokwik_carts') return { type, data: parseGokwikCSV(raw) }
-  return { type: 'automations' as ExportType, data: parseAutomationsCSV(raw) }
+  if (type === 'gokwik_carts') return { type, data: parseGokwikCSV(raw, snapshotDate) }
+  return { type: 'automations' as ExportType, data: parseAutomationsCSV(raw, snapshotDate) }
 }

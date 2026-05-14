@@ -42,6 +42,7 @@ export interface Automation {
   name: string
   type: AutomationType
   channel: Channel
+  date: string | null          // snapshot "as-of" date (YYYY-MM-DD) set at upload time
   sent: number
   delivered: number
   seen: number
@@ -190,6 +191,7 @@ export interface AutomationRow {
   name: string
   type: string
   channel: string
+  date: string | null
   sent: number
   delivered: number
   seen: number

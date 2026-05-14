@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
     const formData  = await req.formData()
     const file      = formData.get('file') as File | null
     const typeHint  = formData.get('type') as ExportType | null
+    const dateInput = (formData.get('date') as string | null)?.trim() || null
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
@@ -21,8 +22,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Only CSV files are accepted' }, { status: 400 })
     }
 
+    // Validate snapshot date (YYYY-MM-DD) — required for automations & gokwik_carts
+    const needsDate = typeHint === 'automations' || typeHint === 'gokwik_carts'
+    if (needsDate) {
+      if (!dateInput) {
+        return NextResponse.json({ error: 'A snapshot date is required for automations and GoKwik Carts uploads' }, { status: 400 })
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+        return NextResponse.json({ error: 'Date must be in YYYY-MM-DD format' }, { status: 400 })
+      }
+    }
+
     const raw      = await file.text()
-    const { type, data } = parseExport(raw, typeHint || undefined)
+    const { type, data } = parseExport(raw, typeHint || undefined, dateInput)
     const supabase = createAdminClient()
 
     let inserted = 0

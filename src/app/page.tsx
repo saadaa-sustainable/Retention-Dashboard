@@ -530,10 +530,11 @@ function AutomationsTab(){
           <option value="ALL">All Types</option><option value="standard">Standard</option><option value="cart_recovery">Cart Recovery (GoKwik)</option>
         </select>
       </div>
-      <Panel><div className="overflow-x-auto"><table className="w-full" style={{minWidth:'860px'}}>
+      <Panel><div className="overflow-x-auto"><table className="w-full" style={{minWidth:'900px'}}>
         <thead className="bg-gray-50/60 sticky top-0 z-[1]"><tr>
           <Th right={false} onClick={()=>toggle('name')} sortDir={dir('name')}>Automation</Th>
           <Th>Type</Th>
+          <Th onClick={()=>toggle('date')} sortDir={dir('date')}>As of</Th>
           <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
           <Th onClick={()=>toggle('delivered')} sortDir={dir('delivered')}>Delivered</Th>
           <Th onClick={()=>toggle('seen')} sortDir={dir('seen')}>Seen</Th>
@@ -547,6 +548,7 @@ function AutomationsTab(){
           <tr key={i} className="hover:bg-blue-50/40 transition-colors">
             <Td right={false} className="font-semibold whitespace-nowrap">{r.name}</Td>
             <Td>{r.type==='cart_recovery'?<Badge variant="amber">Cart Recovery</Badge>:<Badge variant="blue">Standard</Badge>}</Td>
+            <Td className="text-gray-500 whitespace-nowrap tabular-nums">{r.date || '—'}</Td>
             <Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
             <Td>{r.seen?fmt(r.seen):'—'}</Td>
             <Td>{r.ctr?r.ctr+'%':'—'}</Td>
