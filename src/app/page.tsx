@@ -59,6 +59,20 @@ const CATEGORY_TOKENS: readonly [string, SegmentCategory][] = [
   ['failed','failed'],
 ]
 
+// Top-level grouping for campaign cards:
+//   - C-numeric IDs (C101, C132, …)  → kept as individual cards
+//   - Anything starting with HR       → clubbed as "HR"
+//   - Anything starting with HT       → clubbed as "HT"
+//   - Everything else (MKT, MP, sage, TEST, WA, …) → "Others"
+function groupKey(id:string):string{
+  if(!id) return 'Others'
+  const up=id.toUpperCase()
+  if(/^C\d/.test(up)) return id
+  if(up.startsWith('HR')) return 'HR'
+  if(up.startsWith('HT')) return 'HT'
+  return 'Others'
+}
+
 function categorize(segment:string, name?:string):SegmentCategory{
   const s=(segment||'').trim()
   // 1) Cleanest signal: the segment field itself starts with a known token
@@ -145,7 +159,7 @@ type CampaignCard = {
   campaign_id: string
   sent: number; delivered: number; seen: number; clicks: number
   buyers: number; sales: number; orders: number; cost: number
-  send_count: number; segment_count: number; last_date: string
+  send_count: number; segment_count: number; member_count: number; last_date: string
   delivery_rate: number; open_rate: number; roas: number
 }
 
@@ -155,23 +169,26 @@ function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
   const [sortBy,setSortBy]=useState<'sales'|'sent'|'roas'|'campaign_id'>('sales')
 
   const cards=useMemo<CampaignCard[]>(()=>{
-    const map=new Map<string,CampaignCard&{segments:Set<string>}>()
+    const map=new Map<string,CampaignCard&{segments:Set<string>,members:Set<string>}>()
     for(const r of campaigns){
       if(!r.campaign_id) continue
-      let m=map.get(r.campaign_id)
+      const key=groupKey(r.campaign_id)
+      let m=map.get(key)
       if(!m){
-        m={campaign_id:r.campaign_id,sent:0,delivered:0,seen:0,clicks:0,buyers:0,sales:0,orders:0,cost:0,send_count:0,segment_count:0,last_date:'',delivery_rate:0,open_rate:0,roas:0,segments:new Set()}
-        map.set(r.campaign_id,m)
+        m={campaign_id:key,sent:0,delivered:0,seen:0,clicks:0,buyers:0,sales:0,orders:0,cost:0,send_count:0,segment_count:0,member_count:0,last_date:'',delivery_rate:0,open_rate:0,roas:0,segments:new Set(),members:new Set()}
+        map.set(key,m)
       }
       m.sent+=r.sent||0; m.delivered+=r.delivered||0; m.seen+=r.seen||0; m.clicks+=r.clicks||0
       m.buyers+=r.buyers||0; m.sales+=r.sales||0; m.orders+=r.orders||0; m.cost+=r.cost||0
       m.send_count++
+      m.members.add(r.campaign_id)
       if(r.segment) m.segments.add(r.segment)
       if(r.date && r.date>m.last_date) m.last_date=r.date
     }
     return [...map.values()].map(m=>({
       ...m,
       segment_count: m.segments.size,
+      member_count:  m.members.size,
       delivery_rate: safe(m.delivered,m.sent)*100,
       open_rate:     safe(m.seen,m.delivered)*100,
       roas:          safe(m.sales,m.cost),
@@ -217,7 +234,10 @@ function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
               <div className="flex items-start justify-between mb-3">
                 <div className="min-w-0">
                   <p className="text-[15px] font-semibold text-gray-900">{c.campaign_id}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5 tabular-nums">{c.segment_count} segment{c.segment_count===1?'':'s'} · {c.send_count} send{c.send_count===1?'':'s'}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5 tabular-nums">
+                    {c.member_count>1 ? <>{c.member_count} campaigns · </> : null}
+                    {c.segment_count} segment{c.segment_count===1?'':'s'} · {c.send_count} send{c.send_count===1?'':'s'}
+                  </p>
                 </div>
                 <span className="text-gray-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all text-[14px]">→</span>
               </div>
@@ -260,7 +280,7 @@ type CategoryCard = {
 
 function CampaignCategoriesView({campaignId,onBack,onOpenCategory}:{campaignId:string,onBack:()=>void,onOpenCategory:(c:SegmentCategory)=>void}){
   const campaigns=useDashStore(s=>s.campaigns)
-  const scoped=useMemo(()=>campaigns.filter(c=>c.campaign_id===campaignId),[campaigns,campaignId])
+  const scoped=useMemo(()=>campaigns.filter(c=>groupKey(c.campaign_id)===campaignId),[campaigns,campaignId])
 
   const totals=useMemo(()=>{
     const t={sent:0,delivered:0,buyers:0,orders:0,sales:0,cost:0}
@@ -377,7 +397,7 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
   const [page,setPage]=useState(0)
   const [perPage,setPerPage]=useState(10)
 
-  const scoped=useMemo(()=>campaigns.filter(c=>c.campaign_id===campaignId && categorize(c.segment,c.name)===category),[campaigns,campaignId,category])
+  const scoped=useMemo(()=>campaigns.filter(c=>groupKey(c.campaign_id)===campaignId && categorize(c.segment,c.name)===category),[campaigns,campaignId,category])
   const filtered=useMemo(()=>scoped.filter(r=>!search||r.name.toLowerCase().includes(search)||r.segment.toLowerCase().includes(search)),[scoped,search])
   const {sorted,toggle,dir}=useSort(filtered,'date')
 
