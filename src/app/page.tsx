@@ -107,6 +107,7 @@ function OverviewTab(){
   const tcost=sumKey(campaigns,'cost'), tsal=sumKey(campaigns,'sales')
   return(
     <div>
+      <DefinitionsPanel items={DEFS.overview}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 mb-5">
         <KpiCard icon={<ShoppingCart size={18}/>} label="Total Orders"    value={fmt(kpi.total_orders)}/>
         <KpiCard icon={<Tag size={18}/>}          label="Total Sales"     value={cur(kpi.total_sales)}/>
@@ -142,7 +143,6 @@ function OverviewTab(){
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
         {[['Avg Delivery Rate',avgDR.toFixed(1)+'%'],['Avg Open Rate',avgOR.toFixed(1)+'%'],['Avg CTR',avgCTR.toFixed(2)+'%'],['Total Cost',cur(tcost)],['Avg ROAS',avgROAS.toFixed(2)+'x'],['Total Unsubs',fmt(sumKey(campaigns,'unsubscribers'))],['Rev/Delivered','₹'+safe(tsal,td).toFixed(2)],['Buyers/Sent',safe(kpi.total_buyers,kpi.total_sent).toFixed(4)+'%']].map(([l,v])=><MetricCard key={l} label={l} value={v}/>)}
       </div>
-      <DefinitionsPanel items={DEFS.overview}/>
     </div>
   )
 }
@@ -207,6 +207,7 @@ function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
 
   return(
     <div className="fade-in">
+      <DefinitionsPanel items={DEFS.campaigns}/>
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{filtered.length}</span> campaigns · Aggregated by campaign ID</p>
         <div className="flex items-center gap-2">
@@ -264,8 +265,6 @@ function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
           ))}
         </div>
       )}
-
-      <DefinitionsPanel items={DEFS.campaigns}/>
     </div>
   )
 }
@@ -320,6 +319,7 @@ function CampaignCategoriesView({campaignId,onBack,onOpenCategory}:{campaignId:s
 
   return(
     <div className="fade-in">
+      <DefinitionsPanel items={DEFS.campaigns}/>
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <button onClick={onBack} className="flex items-center gap-1.5 text-[12px] text-gray-600 hover:text-gray-900 h-8 px-3 rounded-lg border border-black/[0.08] bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors">
           <span className="text-[14px] leading-none">←</span> Back to campaigns
@@ -385,8 +385,6 @@ function CampaignCategoriesView({campaignId,onBack,onOpenCategory}:{campaignId:s
           ))}
         </div>
       )}
-
-      <DefinitionsPanel items={DEFS.campaigns}/>
     </div>
   )
 }
@@ -418,6 +416,7 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
 
   return(
     <div className="fade-in">
+      <DefinitionsPanel items={DEFS.campaigns}/>
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <button onClick={onBack} className="flex items-center gap-1.5 text-[12px] text-gray-600 hover:text-gray-900 h-8 px-3 rounded-lg border border-black/[0.08] bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors">
           <span className="text-[14px] leading-none">←</span> Back to categories
@@ -508,7 +507,6 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
           </div>
         </div>
       </Panel>
-      <DefinitionsPanel items={DEFS.campaigns}/>
     </div>
   )
 }
@@ -521,6 +519,7 @@ function AutomationsTab(){
   const std=automations.filter(r=>r.type==='standard'), gk=automations.filter(r=>r.type==='cart_recovery')
   return(
     <div>
+      <DefinitionsPanel items={DEFS.automations}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
         {[['Auto Sales',cur(sumKey(std,'sales'))],['Auto Orders',fmt(sumKey(std,'orders'))],['Auto Buyers',fmt(sumKey(std,'buyers'))],['Auto Cost',cur(sumKey(std,'cost'))],['Carts Recovered',cur(sumKey(gk,'recovered_amount'))],['Carts Won',fmt(sumKey(gk,'recovered_carts'))]].map(([l,v])=><MetricCard key={l} label={l} value={v}/>)}
       </div>
@@ -561,7 +560,6 @@ function AutomationsTab(){
           </tr>
         ))}</tbody>
       </table></div></Panel>
-      <DefinitionsPanel items={DEFS.automations}/>
     </div>
   )
 }
@@ -573,6 +571,7 @@ function SegmentTab(){
   const top5=segs.slice(0,5)
   return(
     <div>
+      <DefinitionsPanel items={DEFS.segment}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
           <PanelTitle>Top segments by sales</PanelTitle>
@@ -627,7 +626,6 @@ function SegmentTab(){
           </tr>
         ))}</tbody>
       </table></div></Panel>
-      <DefinitionsPanel items={DEFS.segment}/>
     </div>
   )
 }
@@ -639,6 +637,7 @@ function OfferTab(){
   const pieData=offers.filter(o=>o.sales>0).map((o,i)=>({name:o.offer,value:o.sales,fill:COLORS[i%COLORS.length]}))
   return(
     <div>
+      <DefinitionsPanel items={DEFS.offer}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
           <PanelTitle>Revenue by offer type</PanelTitle>
@@ -686,7 +685,6 @@ function OfferTab(){
           </tr>
         ))}</tbody>
       </table></div></Panel>
-      <DefinitionsPanel items={DEFS.offer}/>
     </div>
   )
 }
@@ -698,6 +696,7 @@ function FunnelTab(){
   const botDR=useMemo(()=>[...campaigns].sort((a,b)=>deliveryRate(a)-deliveryRate(b)).slice(0,5),[campaigns])
   return(
     <div>
+      <DefinitionsPanel items={DEFS.funnel}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
           <PanelTitle>Full messaging funnel</PanelTitle>
@@ -721,7 +720,6 @@ function FunnelTab(){
           {[['Delivery Rate',f.delivery_rate],['Open Rate',f.open_rate],['Click Rate (sent)',f.click_rate],['Click to Open',f.click_to_open],['Buyer Rate',f.buyer_rate],['Click to Purchase',f.click_to_purchase]].map(([l,v])=><MetricCard key={l as string} label={l as string} value={(v as number).toFixed(2)+'%'}/>)}
         </div>
       </PanelBody></Panel>
-      <DefinitionsPanel items={DEFS.funnel}/>
     </div>
   )
 }
@@ -738,6 +736,7 @@ function RevenueTab(){
   },[campaigns])
   return(
     <div>
+      <DefinitionsPanel items={DEFS.revenue}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
         {[['Total Revenue',cur(tsal)],['Total Cost',cur(tcost)],['Overall ROAS',safe(tsal,tcost).toFixed(2)+'x'],['Rev/Delivered','₹'+safe(tsal,td).toFixed(2)],['Rev/Sent','₹'+safe(tsal,ts).toFixed(2)],['Cost per Buyer',cur(safe(tcost,tb))],['Cost per Order',cur(safe(tcost,to))],['Order Conversion',safe(to,tc).toFixed(2)+'%']].map(([l,v])=><MetricCard key={l} label={l} value={v}/>)}
       </div>
@@ -767,7 +766,6 @@ function RevenueTab(){
           </ResponsiveContainer>
         </PanelBody></Panel>
       </div>
-      <DefinitionsPanel items={DEFS.revenue}/>
     </div>
   )
 }
@@ -780,6 +778,7 @@ function HistoricalTab(){
   const sentData=daily.map(d=>({date:d.date.slice(5),sent:d.sent,delivered:d.delivered}))
   return(
     <div>
+      <DefinitionsPanel items={DEFS.historical}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
           <PanelTitle>Daily sales trend</PanelTitle>
@@ -835,7 +834,6 @@ function HistoricalTab(){
           )
         })}</tbody>
       </table></div></Panel>
-      <DefinitionsPanel items={DEFS.historical}/>
     </div>
   )
 }

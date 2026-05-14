@@ -124,7 +124,7 @@ export interface DefItem { term: string; formula: string; desc: string }
 export function DefinitionsPanel({ items }: { items: DefItem[] }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="mt-4 bg-white border border-black/[0.06] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,17,21,0.04)]">
+    <div className="mb-4 bg-white border border-black/[0.06] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,17,21,0.04)]">
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-[12px] font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50/70 transition-colors"
