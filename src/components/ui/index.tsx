@@ -156,14 +156,14 @@ export function DefinitionsPanel({ items }: { items: DefItem[] }) {
 // ── Funnel row ─────────────────────────────────────────────────────────────
 const FUNNEL_COLORS = ['#378ADD','#1D9E75','#BA7517','#D85A30','#7F77DD','#634FA0']
 
-export function FunnelRow({ label, value, pct, colorIdx, drop }: {
-  label: string; value: number; pct: number; colorIdx: number; drop?: number
+export function FunnelRow({ label, value, pct, colorIdx }: {
+  label: string; value: number; pct: number; colorIdx: number
 }) {
   const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(Math.round(n))
   const color = FUNNEL_COLORS[colorIdx] || '#888'
   return (
-    <div>
-      <div className="flex items-center gap-2.5 mb-1">
+    <div className="mb-1.5">
+      <div className="flex items-center gap-2.5">
         <span className="text-[11px] text-gray-500 min-w-[70px] font-medium">{label}</span>
         <div className="flex-1 h-6 bg-gray-100/70 rounded-md overflow-hidden ring-1 ring-inset ring-black/[0.03]">
           <div
@@ -177,9 +177,6 @@ export function FunnelRow({ label, value, pct, colorIdx, drop }: {
           {pct.toFixed(1)}%
         </span>
       </div>
-      {drop != null && drop > 0 && (
-        <p className="text-[10px] text-rose-500 ml-[82px] -mt-0.5 mb-1.5 tabular-nums">↓ dropped {fmt(drop)}</p>
-      )}
     </div>
   )
 }

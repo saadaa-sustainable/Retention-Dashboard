@@ -131,11 +131,11 @@ function OverviewTab(){
         <Panel><PanelBody>
           <PanelTitle>Messaging funnel</PanelTitle>
           <div className="mt-1">
-            <FunnelRow label="Sent"      value={funnel.sent}      pct={100}                       colorIdx={0}/>
-            <FunnelRow label="Delivered" value={funnel.delivered} pct={funnel.delivery_rate}      colorIdx={1} drop={funnel.sent-funnel.delivered}/>
-            <FunnelRow label="Seen"      value={funnel.seen}      pct={safe(funnel.seen,funnel.sent)*100} colorIdx={2} drop={funnel.delivered-funnel.seen}/>
-            <FunnelRow label="Clicks"    value={funnel.clicks}    pct={funnel.click_rate}         colorIdx={3} drop={funnel.seen-funnel.clicks}/>
-            <FunnelRow label="Buyers"    value={funnel.buyers}    pct={funnel.buyer_rate}         colorIdx={4}/>
+            <FunnelRow label="Sent"      value={funnel.sent}      pct={100}                                colorIdx={0}/>
+            <FunnelRow label="Delivered" value={funnel.delivered} pct={funnel.delivery_rate}               colorIdx={1}/>
+            <FunnelRow label="Seen"      value={funnel.seen}      pct={safe(funnel.seen,funnel.sent)*100}  colorIdx={2}/>
+            <FunnelRow label="Clicks"    value={funnel.clicks}    pct={funnel.click_rate}                  colorIdx={3}/>
+            <FunnelRow label="Buyers"    value={funnel.buyers}    pct={funnel.buyer_rate}                  colorIdx={4}/>
           </div>
         </PanelBody></Panel>
       </div>
@@ -701,11 +701,11 @@ function FunnelTab(){
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
           <PanelTitle>Full messaging funnel</PanelTitle>
-          <FunnelRow label="Sent"      value={f.sent}      pct={100}                    colorIdx={0}/>
-          <FunnelRow label="Delivered" value={f.delivered} pct={f.delivery_rate}        colorIdx={1} drop={f.sent-f.delivered}/>
-          <FunnelRow label="Seen"      value={f.seen}      pct={safe(f.seen,f.sent)*100} colorIdx={2} drop={f.delivered-f.seen}/>
-          <FunnelRow label="Clicked"   value={f.clicks}    pct={f.click_rate}           colorIdx={3} drop={f.seen-f.clicks}/>
-          <FunnelRow label="Buyers"    value={f.buyers}    pct={f.buyer_rate}           colorIdx={4} drop={f.clicks-f.buyers}/>
+          <FunnelRow label="Sent"      value={f.sent}      pct={100}                       colorIdx={0}/>
+          <FunnelRow label="Delivered" value={f.delivered} pct={f.delivery_rate}           colorIdx={1}/>
+          <FunnelRow label="Seen"      value={f.seen}      pct={safe(f.seen,f.sent)*100}   colorIdx={2}/>
+          <FunnelRow label="Clicked"   value={f.clicks}    pct={f.click_rate}              colorIdx={3}/>
+          <FunnelRow label="Buyers"    value={f.buyers}    pct={f.buyer_rate}              colorIdx={4}/>
           <FunnelRow label="Orders"    value={f.orders}    pct={safe(f.orders,f.sent)*100} colorIdx={5}/>
         </PanelBody></Panel>
         <Panel><PanelBody>
