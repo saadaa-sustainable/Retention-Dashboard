@@ -141,8 +141,9 @@ export type ExportType = 'campaigns' | 'automations' | 'gokwik_carts'
 
 export interface UploadResult {
   success: boolean
-  inserted: number
-  skipped: number
+  inserted: number     // truly new rows
+  updated: number      // existed (matched on (name,date) / name) but values differed → overwritten
+  skipped: number      // byte-identical to existing row → no DB write
   errors: string[]
   export_type: ExportType
 }

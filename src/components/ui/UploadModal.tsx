@@ -145,15 +145,16 @@ export default function UploadModal({ onClose }: UploadModalProps) {
               <CheckCircle size={18} className="text-green-600" />
               <p className="text-[13px] font-semibold text-green-800">Upload successful</p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-1.5">
               {[
-                ['Inserted', result.inserted],
-                ['Skipped',  result.skipped],
-                ['Errors',   result.errors.length],
-              ].map(([l, v]) => (
-                <div key={l as string} className="bg-white rounded-lg p-2 text-center">
+                ['Inserted', result.inserted,        'New rows'],
+                ['Updated',  result.updated ?? 0,    'Values changed'],
+                ['Skipped',  result.skipped,         'Identical rows'],
+                ['Errors',   result.errors.length,   ''],
+              ].map(([l, v, title]) => (
+                <div key={l as string} className="bg-white rounded-lg p-1.5 text-center" title={title as string}>
                   <p className="text-[10px] text-gray-500">{l}</p>
-                  <p className="text-[16px] font-semibold text-gray-800">{v}</p>
+                  <p className="text-[15px] font-semibold text-gray-800 tabular-nums">{v}</p>
                 </div>
               ))}
             </div>

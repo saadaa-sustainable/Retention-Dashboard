@@ -29,10 +29,13 @@ CREATE TABLE IF NOT EXISTS campaigns (
   cost            NUMERIC(12,2) NOT NULL DEFAULT 0,
   roas            NUMERIC(10,4),
   source_raw      TEXT,
-  ingested_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  -- prevent duplicate ingestion of same campaign+date
-  CONSTRAINT campaigns_name_date_unique UNIQUE (name, date)
+  ingested_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  -- NOTE: no unique constraint on (name, date) by design. Multiple rows with the same
+  -- (name, date) are allowed when their metrics differ — the upload route dedups only
+  -- byte-identical rows. Be aware that aggregations (SUM/AVG) will include all variants.
 );
+-- Migration for existing installs that have the old UNIQUE(name, date) constraint:
+--   ALTER TABLE campaigns DROP CONSTRAINT IF EXISTS campaigns_name_date_unique;
 
 -- ── automations ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS automations (
@@ -94,6 +97,8 @@ CREATE TABLE IF NOT EXISTS utm_orders (
 CREATE INDEX IF NOT EXISTS campaigns_date_idx        ON campaigns (date);
 CREATE INDEX IF NOT EXISTS campaigns_campaign_id_idx ON campaigns (campaign_id);
 CREATE INDEX IF NOT EXISTS campaigns_segment_idx     ON campaigns (segment);
+-- Composite index for fast (name, date) lookups during upload dedup
+CREATE INDEX IF NOT EXISTS campaigns_name_date_idx   ON campaigns (name, date);
 CREATE INDEX IF NOT EXISTS campaigns_offer_idx       ON campaigns (offer);
 CREATE INDEX IF NOT EXISTS automations_type_idx      ON automations (type);
 CREATE INDEX IF NOT EXISTS utm_orders_campaign_idx   ON utm_orders (utm_campaign);
