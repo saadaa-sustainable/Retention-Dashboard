@@ -29,6 +29,7 @@ export default function TopBar({ tab, campaignIds, segments, offers, dates }: To
   const sortedDates = useMemo(() => [...dates].sort().reverse(), [dates])
 
   const rangeActive = filters.date_from !== '' || filters.date_to !== ''
+  const isAutomations = tab === 'automations'
   const sel = (label: string, key: keyof typeof filters, options: string[], display?: (v:string)=>string) => {
     const active = filters[key] !== 'ALL' && filters[key] !== ''
     return (
@@ -86,9 +87,9 @@ export default function TopBar({ tab, campaignIds, segments, offers, dates }: To
         {sel('All Dates',       'date',        sortedDates, d => d.slice(5))}
         {dateRangeInputs}
         {sel('All Channels',    'channel',     ['whatsapp','sms','email'])}
-        {sel('All Campaign IDs','campaign_id', campaignIds)}
-        {sel('All Segments',    'segment',     segments, s => s.length > 30 ? s.slice(0,30)+'…' : s)}
-        {sel('All Offers',      'offer',       offers)}
+        {!isAutomations && sel('All Campaign IDs','campaign_id', campaignIds)}
+        {!isAutomations && sel('All Segments',    'segment',     segments, s => s.length > 30 ? s.slice(0,30)+'…' : s)}
+        {!isAutomations && sel('All Offers',      'offer',       offers)}
         {hasFilter && (
           <button
             onClick={clearFilters}

@@ -844,16 +844,18 @@ export default function DashboardPage(){
   const [syncing,setSyncing]=useState(false)
   const [lastSynced,setLastSynced]=useState<string|null>(null)
   const [syncError,setSyncError]=useState<string|null>(null)
-  const {campaigns,fetchCampaigns,fetchAutomations,loading,error}=useDashStore()
+  const {campaigns,automations,fetchCampaigns,fetchAutomations,loading,error}=useDashStore()
   const filters=useDashStore(s=>s.filters)
 
   useEffect(()=>{fetchCampaigns();fetchAutomations()},[fetchCampaigns,fetchAutomations])
-  useEffect(()=>{fetchCampaigns()},[filters,fetchCampaigns])
+  useEffect(()=>{fetchCampaigns();fetchAutomations()},[filters,fetchCampaigns,fetchAutomations])
 
   const campaignIds=useMemo(()=>[...new Set(campaigns.map(r=>r.campaign_id))].sort(),[campaigns])
   const segments=useMemo(()=>[...new Set(campaigns.map(r=>r.segment))].sort(),[campaigns])
   const offers=useMemo(()=>[...new Set(campaigns.map(r=>r.offer))].sort(),[campaigns])
-  const dates=useMemo(()=>[...new Set(campaigns.map(r=>r.date).filter(Boolean))],[campaigns])
+  const campaignDates=useMemo(()=>[...new Set(campaigns.map(r=>r.date).filter(Boolean))],[campaigns])
+  const automationDates=useMemo(()=>[...new Set(automations.map(r=>r.date).filter((d): d is string => !!d))],[automations])
+  const dates = tab==='automations' ? automationDates : campaignDates
 
   const handleSync=async()=>{
     setSyncing(true)

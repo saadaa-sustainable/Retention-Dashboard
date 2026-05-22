@@ -99,7 +99,10 @@ export const useDashStore = create<DashStore>((set, get) => ({
     try {
       const f   = get().filters
       const params = new URLSearchParams()
-      if (f.channel !== 'ALL') params.set('channel', f.channel)
+      if (f.channel   !== 'ALL') params.set('channel',   f.channel)
+      if (f.date      !== 'ALL') params.set('date',      f.date)
+      if (f.date_from)           params.set('date_from', f.date_from)
+      if (f.date_to)             params.set('date_to',   f.date_to)
       const res  = await fetch(`/api/automations?${params}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)

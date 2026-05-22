@@ -11,11 +11,17 @@ export async function GET(req: NextRequest) {
       .select('*')
       .order('sales', { ascending: false })
 
-    const type    = searchParams.get('type')
-    const channel = searchParams.get('channel')
+    const type     = searchParams.get('type')
+    const channel  = searchParams.get('channel')
+    const date     = searchParams.get('date')
+    const dateFrom = searchParams.get('date_from')
+    const dateTo   = searchParams.get('date_to')
 
     if (type)    query = query.eq('type', type)
     if (channel) query = query.eq('channel', channel)
+    if (date)    query = query.eq('date', date)
+    if (dateFrom) query = query.gte('date', dateFrom)
+    if (dateTo)   query = query.lte('date', dateTo)
 
     const { data, error } = await query
     if (error) throw error
