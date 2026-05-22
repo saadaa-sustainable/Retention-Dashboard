@@ -177,56 +177,59 @@ export async function POST(req: NextRequest) {
         skipped  += bSkipped
       }
     } else {
-      // Automations + GoKwik — unique on `name` only
-      const selectCols = ['name',...AUTOMATION_COMPARE_FIELDS].join(',')
+      // Automations + GoKwik — no unique constraint. Multiple rows per (name, date)
+      // are allowed when their metrics differ; only byte-identical rows are skipped.
+      const selectCols = ['name','date',...AUTOMATION_COMPARE_FIELDS].join(',')
 
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
         const batch = rows.slice(i, i + BATCH_SIZE)
         const names = [...new Set(batch.map(r => r.name))]
+        const dates = [...new Set(batch.map(r => r.date as string).filter(Boolean))]
 
         const { data: existing, error: fErr } = await supabase
           .from('automations')
           .select(selectCols)
           .in('name', names)
+          .in('date', dates)
 
         if (fErr) {
           errors.push(`Batch ${i + 1}-${i + batch.length} (lookup): ${fErr.message}`)
           continue
         }
 
-        const existingMap = new Map<string, Record<string, unknown>>()
+        const existingMap = new Map<string, Record<string, unknown>[]>()
         for (const ex of (existing ?? []) as unknown as Record<string, unknown>[]) {
-          existingMap.set(ex.name as string, ex)
+          const key = `${ex.name}|${ex.date}`
+          const arr = existingMap.get(key) ?? []
+          arr.push(ex)
+          existingMap.set(key, arr)
         }
 
-        const toUpsert: UpsertRow[] = []
-        let bUpdated = 0
+        const toInsert: UpsertRow[] = []
         let bSkipped = 0
 
         for (const r of batch) {
-          const ex = existingMap.get(r.name)
-          if (!ex) {
-            toUpsert.push(r)
-          } else if (rowsIdentical(r, ex, AUTOMATION_COMPARE_FIELDS)) {
+          const key = `${r.name}|${r.date}`
+          const variants = existingMap.get(key) ?? []
+          const isDup = variants.some(v => rowsIdentical(r, v, AUTOMATION_COMPARE_FIELDS))
+          if (isDup) {
             bSkipped++
           } else {
-            toUpsert.push(r)
-            bUpdated++
+            toInsert.push(r)
+            variants.push(r as Record<string, unknown>)
+            existingMap.set(key, variants)
           }
         }
 
-        if (toUpsert.length) {
-          const { error } = await supabase
-            .from('automations')
-            .upsert(toUpsert, { onConflict: 'name', ignoreDuplicates: false })
+        if (toInsert.length) {
+          const { error } = await supabase.from('automations').insert(toInsert)
           if (error) {
             errors.push(`Batch ${i + 1}-${i + batch.length}: ${error.message}`)
             continue
           }
         }
 
-        inserted += toUpsert.length - bUpdated
-        updated  += bUpdated
+        inserted += toInsert.length
         skipped  += bSkipped
       }
     }

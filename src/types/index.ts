@@ -42,7 +42,7 @@ export interface Automation {
   name: string
   type: AutomationType
   channel: Channel
-  date: string | null          // snapshot "as-of" date (YYYY-MM-DD) set at upload time
+  date: string | null          // per-row date (YYYY-MM-DD) — required at insert time; multiple rows per (name, date) allowed
   sent: number
   delivered: number
   seen: number

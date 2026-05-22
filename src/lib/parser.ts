@@ -144,9 +144,8 @@ export function parseAutomationsCSV(raw: string, snapshotDate: string | null = n
     return fallback
   }
 
-  const parsedRows = (result.data as Record<string, unknown>[]).map(row => {
-    const rawName = String(valueFrom(row, ['Name', 'name', 'Automation Name', 'automation_name']) || '').trim()
-    const name = rawName
+  return (result.data as Record<string, unknown>[]).map(row => {
+    const name = String(valueFrom(row, ['Name', 'name', 'Automation Name', 'automation_name']) || '').trim()
     const perRowDate = extractDateFromRow(row, snapshotDate)
 
     return {
@@ -169,32 +168,6 @@ export function parseAutomationsCSV(raw: string, snapshotDate: string | null = n
       recovered_carts:  0,
     }
   }).filter(r => r.name)
-
-  const byName = new Map<string, Omit<Automation, 'id' | 'ingested_at'>>()
-  for (const row of parsedRows) {
-    const existing = byName.get(row.name)
-    if (!existing) {
-      byName.set(row.name, { ...row })
-      continue
-    }
-
-    existing.date = [existing.date, row.date].filter(Boolean).sort().at(-1) || null
-    existing.sent += row.sent
-    existing.delivered += row.delivered
-    existing.seen += row.seen
-    existing.clicks += row.clicks
-    existing.buyers += row.buyers
-    existing.unsubscribers += row.unsubscribers
-    existing.sales += row.sales
-    existing.orders += row.orders
-    existing.cost += row.cost
-    existing.recovered_amount += row.recovered_amount
-    existing.recovered_carts += row.recovered_carts
-    existing.ctr = existing.delivered ? Number(((existing.clicks / existing.delivered) * 100).toFixed(2)) : null
-    existing.roas = existing.cost ? Number((existing.sales / existing.cost).toFixed(2)) : null
-  }
-
-  return [...byName.values()]
 }
 
 // ── Parse GoKwik carts CSV ────────────────────────────────────────────────

@@ -40,10 +40,10 @@ CREATE TABLE IF NOT EXISTS campaigns (
 -- ── automations ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS automations (
   id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name              TEXT NOT NULL UNIQUE,   -- automation name is unique
+  name              TEXT NOT NULL,
   type              TEXT NOT NULL DEFAULT 'standard', -- standard | cart_recovery
   channel           TEXT NOT NULL DEFAULT 'whatsapp',
-  date              DATE,                   -- snapshot "as-of" date (latest upload wins)
+  date              DATE NOT NULL,          -- per-row date; multiple rows per (name, date) allowed
   sent              INTEGER NOT NULL DEFAULT 0,
   delivered         INTEGER NOT NULL DEFAULT 0,
   seen              INTEGER NOT NULL DEFAULT 0,
@@ -59,8 +59,14 @@ CREATE TABLE IF NOT EXISTS automations (
   recovered_carts   INTEGER NOT NULL DEFAULT 0,
   ingested_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- NOTE: no unique constraint by design. Multiple rows with the same (name, date)
+-- are allowed when their metrics differ — same dedup model as campaigns.
 -- Migration for existing installs (run once if your table already exists):
+--   TRUNCATE TABLE automations;
 --   ALTER TABLE automations ADD COLUMN IF NOT EXISTS date DATE;
+--   ALTER TABLE automations DROP CONSTRAINT IF EXISTS automations_name_key;
+--   ALTER TABLE automations ALTER COLUMN date SET NOT NULL;
+--   CREATE INDEX IF NOT EXISTS automations_name_date_idx ON automations (name, date);
 
 -- ── raw_exports ────────────────────────────────────────────────────────────
 -- Stores every uploaded CSV file for audit / re-ingestion
@@ -101,6 +107,8 @@ CREATE INDEX IF NOT EXISTS campaigns_segment_idx     ON campaigns (segment);
 CREATE INDEX IF NOT EXISTS campaigns_name_date_idx   ON campaigns (name, date);
 CREATE INDEX IF NOT EXISTS campaigns_offer_idx       ON campaigns (offer);
 CREATE INDEX IF NOT EXISTS automations_type_idx      ON automations (type);
+CREATE INDEX IF NOT EXISTS automations_name_date_idx ON automations (name, date);
+CREATE INDEX IF NOT EXISTS automations_date_idx      ON automations (date);
 CREATE INDEX IF NOT EXISTS utm_orders_campaign_idx   ON utm_orders (utm_campaign);
 
 -- ── Views ──────────────────────────────────────────────────────────────────
