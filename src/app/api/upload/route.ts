@@ -59,6 +59,8 @@ export async function POST(req: NextRequest) {
     const file      = formData.get('file') as File | null
     const typeHint  = formData.get('type') as ExportType | null
     const dateInput = (formData.get('date') as string | null)?.trim() || null
+    const dateFrom = (formData.get('date_from') as string | null)?.trim() || null
+    const dateTo = (formData.get('date_to') as string | null)?.trim() || null
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
@@ -67,14 +69,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Only CSV files are accepted' }, { status: 400 })
     }
 
-    // We'll accept a global snapshot date or per-row dates inside the CSV.
+    // We'll accept a global snapshot date (single) or a from+to date range, or per-row dates inside the CSV.
     // Defer strict validation until after parsing so rows with per-row dates are allowed.
     if (dateInput && !/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
       return NextResponse.json({ error: 'Date must be in YYYY-MM-DD format' }, { status: 400 })
     }
+    if ((dateFrom || dateTo) && !(dateFrom && dateTo)) {
+      return NextResponse.json({ error: 'Both date_from and date_to must be provided for a range' }, { status: 400 })
+    }
+    if (dateFrom && dateTo) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+        return NextResponse.json({ error: 'Dates must be in YYYY-MM-DD format' }, { status: 400 })
+      }
+      if (dateFrom > dateTo) {
+        return NextResponse.json({ error: 'date_from must be the same or before date_to' }, { status: 400 })
+      }
+    }
 
     const raw      = await file.text()
-    const { type, data } = parseExport(raw, typeHint || undefined, dateInput)
+    // Use dateFrom (range start) if provided, otherwise the single dateInput.
+    const snapshotDate = dateFrom || dateInput || null
+    const { type, data } = parseExport(raw, typeHint || undefined, snapshotDate)
     const supabase = createAdminClient()
 
     let inserted = 0
@@ -86,9 +101,8 @@ export async function POST(req: NextRequest) {
     const rows = data as UpsertRow[]
 
     // For automations and gokwik_carts, ensure each row has a date either from
-    // the CSV itself or from the supplied snapshot `dateInput`. If any row lacks
-    // a date, reject the upload so the user can supply the snapshot date.
-    if ((type === 'automations' || type === 'gokwik_carts') && !dateInput) {
+    // the CSV itself or from the supplied snapshot (single date or range start).
+    if ((type === 'automations' || type === 'gokwik_carts') && !snapshotDate) {
       const missingDate = rows.some(r => !r.date)
       if (missingDate) {
         return NextResponse.json({ error: 'Some rows are missing dates — provide a snapshot date or include per-row dates in the CSV' }, { status: 400 })

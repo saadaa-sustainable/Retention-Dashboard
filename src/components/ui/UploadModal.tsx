@@ -10,6 +10,8 @@ export default function UploadModal({ onClose }: UploadModalProps) {
   const [file, setFile]       = useState<File | null>(null)
   const [type, setType]       = useState<ExportType>('campaigns')
   const [snapshotDate, setSnapshotDate] = useState('')
+  const [snapshotDateFrom, setSnapshotDateFrom] = useState('')
+  const [snapshotDateTo, setSnapshotDateTo] = useState('')
   const [status, setStatus]   = useState<'idle'|'uploading'|'done'|'error'>('idle')
   const [result, setResult]   = useState<UploadResult | null>(null)
   const [errMsg, setErrMsg]   = useState('')
@@ -17,7 +19,11 @@ export default function UploadModal({ onClose }: UploadModalProps) {
   const { fetchCampaigns, fetchAutomations } = useDashStore()
 
   const needsDate = type === 'automations' || type === 'gokwik_carts'
-  const dateValid = !needsDate || /^\d{4}-\d{2}-\d{2}$/.test(snapshotDate)
+  const hasRange = Boolean(snapshotDateFrom || snapshotDateTo)
+  const dateValid = !needsDate || (
+    /^\d{4}-\d{2}-\d{2}$/.test(snapshotDate) ||
+    (snapshotDateFrom && snapshotDateTo && /^\d{4}-\d{2}-\d{2}$/.test(snapshotDateFrom) && /^\d{4}-\d{2}-\d{2}$/.test(snapshotDateTo))
+  )
 
   const handleFile = (f: File) => {
     setFile(f)
@@ -46,7 +52,14 @@ export default function UploadModal({ onClose }: UploadModalProps) {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('type', type)
-      if (needsDate) fd.append('date', snapshotDate)
+      if (needsDate) {
+        if (snapshotDateFrom && snapshotDateTo) {
+          fd.append('date_from', snapshotDateFrom)
+          fd.append('date_to', snapshotDateTo)
+        } else {
+          fd.append('date', snapshotDate)
+        }
+      }
       const res  = await fetch('/api/upload', { method: 'POST', body: fd })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Upload failed')
@@ -90,26 +103,40 @@ export default function UploadModal({ onClose }: UploadModalProps) {
           </div>
         </div>
 
-        {/* Snapshot date — only for automations & gokwik (campaigns derive date per-row from the CSV) */}
+        {/* Snapshot date/range — only for automations & gokwik (campaigns derive date per-row from the CSV) */}
         {needsDate && (status === 'idle' || status === 'error') && (
           <div className="mb-4">
-            <label htmlFor="snapshot-date" className="text-[12px] font-medium text-gray-600 mb-1.5 block">
-              Snapshot date <span className="text-red-500">*</span>
+            <label className="text-[12px] font-medium text-gray-600 mb-1.5 block">
+              Snapshot date or range <span className="text-red-500">*</span>
             </label>
-            <input
-              id="snapshot-date"
-              type="date"
-              value={snapshotDate}
-              onChange={e => setSnapshotDate(e.target.value)}
-              max={new Date().toISOString().slice(0,10)}
-              className={`w-full px-3 py-2 text-[13px] rounded-lg border bg-white focus:outline-none transition-colors ${
-                snapshotDate && !dateValid
-                  ? 'border-red-300 focus:border-red-500'
-                  : 'border-black/10 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
-              }`}
-            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                id="snapshot-date-from"
+                type="date"
+                value={snapshotDateFrom || snapshotDate}
+                onChange={e => { setSnapshotDateFrom(e.target.value); setSnapshotDate('') }}
+                max={new Date().toISOString().slice(0,10)}
+                className={`w-full px-3 py-2 text-[13px] rounded-lg border bg-white focus:outline-none transition-colors ${
+                  snapshotDateFrom && !dateValid
+                    ? 'border-red-300 focus:border-red-500'
+                    : 'border-black/10 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
+                }`}
+              />
+              <input
+                id="snapshot-date-to"
+                type="date"
+                value={snapshotDateTo}
+                onChange={e => { setSnapshotDateTo(e.target.value); setSnapshotDate('') }}
+                max={new Date().toISOString().slice(0,10)}
+                className={`w-full px-3 py-2 text-[13px] rounded-lg border bg-white focus:outline-none transition-colors ${
+                  snapshotDateTo && !dateValid
+                    ? 'border-red-300 focus:border-red-500'
+                    : 'border-black/10 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
+                }`}
+              />
+            </div>
             <p className="text-[11px] text-gray-400 mt-1">
-              The date this data belongs to. Re-uploading the same automation with a new date will overwrite its current snapshot.
+              Provide either a single snapshot date, or a from+to date range. If rows contain their own dates, those will be used instead.
             </p>
           </div>
         )}
