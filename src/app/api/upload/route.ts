@@ -67,15 +67,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Only CSV files are accepted' }, { status: 400 })
     }
 
-    // Validate snapshot date (YYYY-MM-DD) — required for automations & gokwik_carts
-    const needsDate = typeHint === 'automations' || typeHint === 'gokwik_carts'
-    if (needsDate) {
-      if (!dateInput) {
-        return NextResponse.json({ error: 'A snapshot date is required for automations and GoKwik Carts uploads' }, { status: 400 })
-      }
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
-        return NextResponse.json({ error: 'Date must be in YYYY-MM-DD format' }, { status: 400 })
-      }
+    // We'll accept a global snapshot date or per-row dates inside the CSV.
+    // Defer strict validation until after parsing so rows with per-row dates are allowed.
+    if (dateInput && !/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+      return NextResponse.json({ error: 'Date must be in YYYY-MM-DD format' }, { status: 400 })
     }
 
     const raw      = await file.text()
@@ -89,6 +84,16 @@ export async function POST(req: NextRequest) {
 
     type UpsertRow = { name: string } & Record<string, unknown>
     const rows = data as UpsertRow[]
+
+    // For automations and gokwik_carts, ensure each row has a date either from
+    // the CSV itself or from the supplied snapshot `dateInput`. If any row lacks
+    // a date, reject the upload so the user can supply the snapshot date.
+    if ((type === 'automations' || type === 'gokwik_carts') && !dateInput) {
+      const missingDate = rows.some(r => !r.date)
+      if (missingDate) {
+        return NextResponse.json({ error: 'Some rows are missing dates — provide a snapshot date or include per-row dates in the CSV' }, { status: 400 })
+      }
+    }
 
     if (type === 'campaigns') {
       // Campaigns table has NO unique constraint on (name, date) — multiple rows

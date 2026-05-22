@@ -93,35 +93,76 @@ export function parseCampaignsCSV(raw: string): Omit<Campaign, 'id' | 'ingested_
 // ── Parse automations CSV ─────────────────────────────────────────────────
 export function parseAutomationsCSV(raw: string, snapshotDate: string | null = null): Omit<Automation, 'id' | 'ingested_at'>[] {
   const result = Papa.parse(raw, { header: true, skipEmptyLines: true })
-  return (result.data as Record<string, unknown>[]).map(row => ({
-    name:             String(row['Name'] || '').trim(),
-    type:             'standard' as const,
-    channel:          String(row['Channel'] || 'whatsapp').toLowerCase() as Automation['channel'],
-    date:             snapshotDate,
-    sent:             toNum(row['Sent']),
-    delivered:        toNum(row['Delivered']),
-    seen:             toNum(row['Seen']),
-    ctr:              toNullNum(row['CTR']),
-    clicks:           toNum(row['Clicks']),
-    buyers:           toNum(row['Buyers']),
-    unsubscribers:    toNum(row['Unsubscribers']),
-    sales:            toNum(row['Sales']),
-    orders:           toNum(row['Orders']),
-    cost:             toNum(row['Cost']),
-    roas:             toNullNum(row['ROAS']),
-    recovered_amount: 0,
-    recovered_carts:  0,
-  })).filter(r => r.name)
+  // Helper: try to extract a YYYY-MM-DD from any "date-y" column in the row
+  function extractDateFromRow(row: Record<string, unknown>, fallback: string | null) {
+    for (const k of Object.keys(row)) {
+      if (k.toLowerCase().includes('date')) {
+        const v = String(row[k] || '').trim()
+        if (!v) continue
+        // If the cell contains a range like "2024-01-01 to 2024-01-07", pick the first date
+        const m = v.match(/\d{4}-\d{2}-\d{2}/)
+        if (m) return m[0]
+      }
+    }
+    return fallback
+  }
+
+  // Detect GoKwik/cart-recovery style automation names and treat them as cart_recovery
+  function isCartRecoveryName(name: string) {
+    if (!name) return false
+    const n = name.toLowerCase()
+    return /\bgk\b|gk[_ ]|gokwik|abandoned checkout|headless repeat/i.test(n)
+  }
+
+  return (result.data as Record<string, unknown>[]).map(row => {
+    const rawName = String(row['Name'] || row['name'] || '').trim()
+    const name = rawName
+    const perRowDate = extractDateFromRow(row, snapshotDate)
+    const cartMatch = isCartRecoveryName(name)
+
+    return {
+      name,
+      type: cartMatch ? 'cart_recovery' as const : 'standard' as const,
+      channel:          String(row['Channel'] || row['channel'] || 'whatsapp').toLowerCase() as Automation['channel'],
+      date:             perRowDate,
+      sent:             toNum(row['Sent']),
+      delivered:        toNum(row['Delivered']),
+      seen:             toNum(row['Seen']),
+      ctr:              toNullNum(row['CTR']),
+      clicks:           toNum(row['Clicks']),
+      buyers:           toNum(row['Buyers']),
+      unsubscribers:    toNum(row['Unsubscribers']),
+      sales:            toNum(row['Sales']),
+      orders:           toNum(row['Orders']),
+      cost:             toNum(row['Cost']),
+      roas:             toNullNum(row['ROAS']),
+      recovered_amount: 0,
+      recovered_carts:  0,
+    }
+  }).filter(r => r.name)
 }
 
 // ── Parse GoKwik carts CSV ────────────────────────────────────────────────
 export function parseGokwikCSV(raw: string, snapshotDate: string | null = null): Omit<Automation, 'id' | 'ingested_at'>[] {
   const result = Papa.parse(raw, { header: true, skipEmptyLines: true })
+  // Allow per-row date in GoKwik exports as well (fall back to snapshotDate)
+  function extractDateFromRow(row: Record<string, unknown>, fallback: string | null) {
+    for (const k of Object.keys(row)) {
+      if (k.toLowerCase().includes('date')) {
+        const v = String(row[k] || '').trim()
+        if (!v) continue
+        const m = v.match(/\d{4}-\d{2}-\d{2}/)
+        if (m) return m[0]
+      }
+    }
+    return fallback
+  }
+
   return (result.data as Record<string, unknown>[]).map(row => ({
-    name:             String(row['Name'] || '').trim(),
+    name:             String(row['Name'] || row['name'] || '').trim(),
     type:             'cart_recovery' as const,
-    channel:          String(row['Channel'] || 'whatsapp').toLowerCase() as Automation['channel'],
-    date:             snapshotDate,
+    channel:          String(row['Channel'] || row['channel'] || 'whatsapp').toLowerCase() as Automation['channel'],
+    date:             extractDateFromRow(row, snapshotDate),
     sent:             toNum(row['Sent']),
     delivered:        toNum(row['Delivered']),
     seen:             toNum(row['Seen']),
