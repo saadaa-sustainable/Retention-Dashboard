@@ -5,6 +5,7 @@ import type { Campaign, Automation, ExportType } from '@/types'
 export function detectExportType(headers: string[]): ExportType {
   const h = headers.map(s => s.toLowerCase().trim())
   if (h.includes('recovered amount') || h.includes('recovered carts')) return 'gokwik_carts'
+  if (h.includes('automation_name') || h.includes('automation name') || h.includes('templates_used')) return 'automations'
   if (h.includes('source') || h.includes('date')) return 'campaigns'
   return 'automations'
 }
@@ -21,6 +22,45 @@ function toNullNum(v: unknown): number | null {
   const s = String(v).replace(/[₹,%]/g, '').trim()
   const n = parseFloat(s)
   return isNaN(n) ? null : n
+}
+
+function buildRowLookup(row: Record<string, unknown>) {
+  const map = new Map<string, unknown>()
+  for (const [key, value] of Object.entries(row)) {
+    map.set(key.toLowerCase().trim(), value)
+  }
+  return map
+}
+
+function valueFrom(row: Record<string, unknown>, aliases: string[]) {
+  const lookup = buildRowLookup(row)
+  for (const alias of aliases) {
+    const value = lookup.get(alias.toLowerCase())
+    if (value !== undefined) return value
+  }
+  return undefined
+}
+
+function normalizeDateValue(v: unknown): string | null {
+  const s = String(v || '').trim()
+  if (!s) return null
+
+  const iso = s.match(/\d{4}-\d{2}-\d{2}/)
+  if (iso) return iso[0]
+
+  const dmy = s.match(/\b(\d{1,2})-(\d{1,2})-(\d{4})\b/)
+  if (dmy) {
+    const [, d, m, y] = dmy
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+
+  const slashDmy = s.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/)
+  if (slashDmy) {
+    const [, d, m, y] = slashDmy
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+
+  return null
 }
 
 // ── Parse campaign name → dimensions ──────────────────────────────────────
@@ -97,49 +137,64 @@ export function parseAutomationsCSV(raw: string, snapshotDate: string | null = n
   function extractDateFromRow(row: Record<string, unknown>, fallback: string | null) {
     for (const k of Object.keys(row)) {
       if (k.toLowerCase().includes('date')) {
-        const v = String(row[k] || '').trim()
-        if (!v) continue
-        // If the cell contains a range like "2024-01-01 to 2024-01-07", pick the first date
-        const m = v.match(/\d{4}-\d{2}-\d{2}/)
-        if (m) return m[0]
+        const parsed = normalizeDateValue(row[k])
+        if (parsed) return parsed
       }
     }
     return fallback
   }
 
-  // Detect GoKwik/cart-recovery style automation names and treat them as cart_recovery
-  function isCartRecoveryName(name: string) {
-    if (!name) return false
-    const n = name.toLowerCase()
-    return /\bgk\b|gk[_ ]|gokwik|abandoned checkout|headless repeat/i.test(n)
-  }
-
-  return (result.data as Record<string, unknown>[]).map(row => {
-    const rawName = String(row['Name'] || row['name'] || '').trim()
+  const parsedRows = (result.data as Record<string, unknown>[]).map(row => {
+    const rawName = String(valueFrom(row, ['Name', 'name', 'Automation Name', 'automation_name']) || '').trim()
     const name = rawName
     const perRowDate = extractDateFromRow(row, snapshotDate)
-    const cartMatch = isCartRecoveryName(name)
 
     return {
       name,
-      type: cartMatch ? 'cart_recovery' as const : 'standard' as const,
-      channel:          String(row['Channel'] || row['channel'] || 'whatsapp').toLowerCase() as Automation['channel'],
+      type: 'standard' as const,
+      channel:          String(valueFrom(row, ['Channel', 'channel']) || 'whatsapp').toLowerCase() as Automation['channel'],
       date:             perRowDate,
-      sent:             toNum(row['Sent']),
-      delivered:        toNum(row['Delivered']),
-      seen:             toNum(row['Seen']),
-      ctr:              toNullNum(row['CTR']),
-      clicks:           toNum(row['Clicks']),
-      buyers:           toNum(row['Buyers']),
-      unsubscribers:    toNum(row['Unsubscribers']),
-      sales:            toNum(row['Sales']),
-      orders:           toNum(row['Orders']),
-      cost:             toNum(row['Cost']),
-      roas:             toNullNum(row['ROAS']),
+      sent:             toNum(valueFrom(row, ['Sent', 'sent'])),
+      delivered:        toNum(valueFrom(row, ['Delivered', 'delivered'])),
+      seen:             toNum(valueFrom(row, ['Seen', 'seen', 'Opened', 'opened'])),
+      ctr:              toNullNum(valueFrom(row, ['CTR', 'ctr'])),
+      clicks:           toNum(valueFrom(row, ['Clicks', 'clicks', 'Clicked', 'clicked'])),
+      buyers:           toNum(valueFrom(row, ['Buyers', 'buyers'])),
+      unsubscribers:    toNum(valueFrom(row, ['Unsubscribers', 'unsubscribers'])),
+      sales:            toNum(valueFrom(row, ['Sales', 'sales', 'Revenue INR', 'revenue_inr'])),
+      orders:           toNum(valueFrom(row, ['Orders', 'orders'])),
+      cost:             toNum(valueFrom(row, ['Cost', 'cost', 'Cost INR', 'cost_inr'])),
+      roas:             toNullNum(valueFrom(row, ['ROAS', 'roas'])),
       recovered_amount: 0,
       recovered_carts:  0,
     }
   }).filter(r => r.name)
+
+  const byName = new Map<string, Omit<Automation, 'id' | 'ingested_at'>>()
+  for (const row of parsedRows) {
+    const existing = byName.get(row.name)
+    if (!existing) {
+      byName.set(row.name, { ...row })
+      continue
+    }
+
+    existing.date = [existing.date, row.date].filter(Boolean).sort().at(-1) || null
+    existing.sent += row.sent
+    existing.delivered += row.delivered
+    existing.seen += row.seen
+    existing.clicks += row.clicks
+    existing.buyers += row.buyers
+    existing.unsubscribers += row.unsubscribers
+    existing.sales += row.sales
+    existing.orders += row.orders
+    existing.cost += row.cost
+    existing.recovered_amount += row.recovered_amount
+    existing.recovered_carts += row.recovered_carts
+    existing.ctr = existing.delivered ? Number(((existing.clicks / existing.delivered) * 100).toFixed(2)) : null
+    existing.roas = existing.cost ? Number((existing.sales / existing.cost).toFixed(2)) : null
+  }
+
+  return [...byName.values()]
 }
 
 // ── Parse GoKwik carts CSV ────────────────────────────────────────────────
@@ -149,10 +204,8 @@ export function parseGokwikCSV(raw: string, snapshotDate: string | null = null):
   function extractDateFromRow(row: Record<string, unknown>, fallback: string | null) {
     for (const k of Object.keys(row)) {
       if (k.toLowerCase().includes('date')) {
-        const v = String(row[k] || '').trim()
-        if (!v) continue
-        const m = v.match(/\d{4}-\d{2}-\d{2}/)
-        if (m) return m[0]
+        const parsed = normalizeDateValue(row[k])
+        if (parsed) return parsed
       }
     }
     return fallback
