@@ -95,16 +95,26 @@ function categorize(segment:string, name?:string):SegmentCategory{
 
 function OverviewTab(){
   const campaigns=useDashStore(s=>s.campaigns)
-  const kpi=computeKpis(campaigns)
-  const funnel=computeFunnel(campaigns)
-  const top6=[...campaigns].sort((a,b)=>b.sales-a.sales).slice(0,6)
-  const td=sumKey(campaigns,'delivered'), ts=sumKey(campaigns,'sent'), tse=sumKey(campaigns,'seen')
-  const avgDR=safe(td,ts)*100, avgOR=safe(tse,td)*100
-  const ctrArr=campaigns.filter(r=>r.ctr&&r.ctr>0)
-  const avgCTR=ctrArr.length?sumKey(ctrArr,'ctr')/ctrArr.length:0
-  const roasArr=campaigns.filter(r=>r.roas&&r.roas>0)
-  const avgROAS=roasArr.length?sumKey(roasArr,'roas')/roasArr.length:0
-  const tcost=sumKey(campaigns,'cost'), tsal=sumKey(campaigns,'sales')
+  const {kpi,funnel,top6,avgDR,avgOR,avgCTR,avgROAS,tcost,tsal,td,ts,tunsub}=useMemo(()=>{
+    const kpi=computeKpis(campaigns)
+    const funnel=computeFunnel(campaigns)
+    const top6=[...campaigns].sort((a,b)=>b.sales-a.sales).slice(0,6)
+    let ts=0,td=0,tse=0,tcost=0,tsal=0,tunsub=0,ctrSum=0,ctrCount=0,roasSum=0,roasCount=0
+    for(const r of campaigns){
+      ts+=r.sent||0; td+=r.delivered||0; tse+=r.seen||0
+      tcost+=r.cost||0; tsal+=r.sales||0; tunsub+=r.unsubscribers||0
+      if(r.ctr&&r.ctr>0){ ctrSum+=r.ctr; ctrCount++ }
+      if(r.roas&&r.roas>0){ roasSum+=r.roas; roasCount++ }
+    }
+    return {
+      kpi, funnel, top6,
+      td, ts, tcost, tsal, tunsub,
+      avgDR: safe(td,ts)*100,
+      avgOR: safe(tse,td)*100,
+      avgCTR: ctrCount ? ctrSum/ctrCount : 0,
+      avgROAS: roasCount ? roasSum/roasCount : 0,
+    }
+  },[campaigns])
   return(
     <div>
       <DefinitionsPanel items={DEFS.overview}/>
@@ -141,7 +151,7 @@ function OverviewTab(){
         </PanelBody></Panel>
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
-        {[['Avg Delivery Rate',avgDR.toFixed(1)+'%'],['Avg Open Rate',avgOR.toFixed(1)+'%'],['Avg CTR',avgCTR.toFixed(2)+'%'],['Total Cost',cur(tcost)],['Avg ROAS',avgROAS.toFixed(2)+'x'],['Total Unsubs',fmt(sumKey(campaigns,'unsubscribers'))],['Rev/Delivered','₹'+safe(tsal,td).toFixed(2)],['Buyers/Sent',safe(kpi.total_buyers,kpi.total_sent).toFixed(4)+'%']].map(([l,v])=><MetricCard key={l} label={l} value={v}/>)}
+        {[['Avg Delivery Rate',avgDR.toFixed(1)+'%'],['Avg Open Rate',avgOR.toFixed(1)+'%'],['Avg CTR',avgCTR.toFixed(2)+'%'],['Total Cost',cur(tcost)],['Avg ROAS',avgROAS.toFixed(2)+'x'],['Total Unsubs',fmt(tunsub)],['Rev/Delivered','₹'+safe(tsal,td).toFixed(2)],['Buyers/Sent',safe(kpi.total_buyers,ts).toFixed(4)+'%']].map(([l,v])=><MetricCard key={l} label={l} value={v}/>)}
       </div>
     </div>
   )
@@ -609,7 +619,10 @@ function AutomationsTab(){
     })
   },[automations,typeFilter,search])
   const {sorted,toggle,dir}=useSort(filtered,'sales')
-  const std=automations.filter(r=>r.type==='standard'), gk=automations.filter(r=>r.type==='cart_recovery')
+  const {std,gk}=useMemo(()=>({
+    std: automations.filter(r=>r.type==='standard'),
+    gk:  automations.filter(r=>r.type==='cart_recovery'),
+  }),[automations])
   return(
     <div>
       <DefinitionsPanel items={DEFS.automations}/>
@@ -734,7 +747,7 @@ function OfferTab(){
   const campaigns=useDashStore(s=>s.campaigns)
   const offers=useMemo(()=>computeOffers(campaigns),[campaigns])
   const {sorted,toggle,dir}=useSort(offers,'sales')
-  const pieData=offers.filter(o=>o.sales>0).map((o,i)=>({name:o.offer,value:o.sales,fill:COLORS[i%COLORS.length]}))
+  const pieData=useMemo(()=>offers.filter(o=>o.sales>0).map((o,i)=>({name:o.offer,value:o.sales,fill:COLORS[i%COLORS.length]})),[offers])
   return(
     <div>
       <DefinitionsPanel items={DEFS.offer}/>
@@ -826,9 +839,15 @@ function FunnelTab(){
 
 function RevenueTab(){
   const campaigns=useDashStore(s=>s.campaigns)
-  const ts=sumKey(campaigns,'sent'), td=sumKey(campaigns,'delivered'), tsal=sumKey(campaigns,'sales')
-  const tb=sumKey(campaigns,'buyers'), to=sumKey(campaigns,'orders'), tcost=sumKey(campaigns,'cost'), tc=sumKey(campaigns,'clicks')
-  const top10=[...campaigns].sort((a,b)=>revenuePerDel(b)-revenuePerDel(a)).slice(0,10)
+  const {ts,td,tsal,tb,to,tcost,tc,top10}=useMemo(()=>{
+    let ts=0,td=0,tsal=0,tb=0,to=0,tcost=0,tc=0
+    for(const r of campaigns){
+      ts+=r.sent||0; td+=r.delivered||0; tsal+=r.sales||0
+      tb+=r.buyers||0; to+=r.orders||0; tcost+=r.cost||0; tc+=r.clicks||0
+    }
+    const top10=[...campaigns].sort((a,b)=>revenuePerDel(b)-revenuePerDel(a)).slice(0,10)
+    return {ts,td,tsal,tb,to,tcost,tc,top10}
+  },[campaigns])
   const buckets=useMemo(()=>{
     const b:Record<string,number>={'0–3x':0,'3–10x':0,'10–30x':0,'30–60x':0,'60x+':0}
     campaigns.forEach(r=>{if(!r.roas||r.roas<=0)return;if(r.roas<3)b['0–3x']++;else if(r.roas<10)b['3–10x']++;else if(r.roas<30)b['10–30x']++;else if(r.roas<60)b['30–60x']++;else b['60x+']++})
@@ -947,7 +966,6 @@ export default function DashboardPage(){
   const {campaigns,automations,fetchCampaigns,fetchAutomations,loading,error}=useDashStore()
   const filters=useDashStore(s=>s.filters)
 
-  useEffect(()=>{fetchCampaigns();fetchAutomations()},[fetchCampaigns,fetchAutomations])
   useEffect(()=>{fetchCampaigns();fetchAutomations()},[filters,fetchCampaigns,fetchAutomations])
 
   const campaignIds=useMemo(()=>[...new Set(campaigns.map(r=>r.campaign_id))].sort(),[campaigns])
