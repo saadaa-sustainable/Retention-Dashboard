@@ -135,9 +135,20 @@ export interface KpiSummary {
   new_customers: number
 }
 
+// ── Automation creatives ───────────────────────────────────────────────────
+
+export interface AutomationCreative {
+  id: string
+  automation_name: string
+  template_name: string
+  template_copy: string | null
+  creative_media_link: string | null
+  ingested_at: string
+}
+
 // ── Upload / ingestion ─────────────────────────────────────────────────────
 
-export type ExportType = 'campaigns' | 'automations' | 'gokwik_carts'
+export type ExportType = 'campaigns' | 'automations' | 'gokwik_carts' | 'automation_creatives'
 
 export interface UploadResult {
   success: boolean

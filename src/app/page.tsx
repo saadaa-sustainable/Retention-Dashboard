@@ -511,9 +511,88 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
   )
 }
 
+type AutomationCreative = {
+  id: string
+  automation_name: string
+  template_name: string
+  template_copy: string | null
+  creative_media_link: string | null
+}
+
+function driveEmbedUrl(url: string): string | null {
+  const m = url.match(/\/file\/d\/([^/]+)/) || url.match(/[?&]id=([^&]+)/)
+  return m ? `https://drive.google.com/file/d/${m[1]}/preview` : null
+}
+
+function AutomationCreativesModal({automationName,onClose}:{automationName:string,onClose:()=>void}){
+  const [items,setItems]=useState<AutomationCreative[]|null>(null)
+  const [error,setError]=useState<string|null>(null)
+  useEffect(()=>{
+    let cancel=false
+    fetch(`/api/automation-creatives?name=${encodeURIComponent(automationName)}`)
+      .then(r=>r.json())
+      .then(j=>{ if(!cancel) setItems(j.data||[]) })
+      .catch(e=>{ if(!cancel) setError(e instanceof Error?e.message:'Failed to load') })
+    return ()=>{ cancel=true }
+  },[automationName])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 w-[720px] max-w-[95vw] max-h-[90vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
+        <div className="flex justify-between items-start px-5 py-4 border-b border-black/[0.06]">
+          <div className="min-w-0">
+            <p className="text-[11px] text-gray-400 uppercase tracking-wide">Automation</p>
+            <h2 className="text-[15px] font-semibold text-gray-900 truncate" title={automationName}>{automationName}</h2>
+            <p className="text-[11px] text-gray-500 mt-0.5">{items?`${items.length} template${items.length===1?'':'s'}`:'Loading…'}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 ml-3">✕</button>
+        </div>
+        <div className="overflow-y-auto px-5 py-4 space-y-4">
+          {error && <div className="text-[12px] text-red-600">Failed to load creatives: {error}</div>}
+          {items && items.length===0 && (
+            <div className="text-center py-10 text-[13px] text-gray-400">
+              No creatives mapped to <span className="font-mono">{automationName}</span> yet.<br/>
+              <span className="text-[11px]">Upload the Creatives Excel and make sure the automation name matches.</span>
+            </div>
+          )}
+          {items && items.map(c=>{
+            const embed = c.creative_media_link ? driveEmbedUrl(c.creative_media_link) : null
+            return (
+              <div key={c.id} className="border border-black/[0.08] rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-gray-50/60 border-b border-black/[0.06]">
+                  <p className="text-[11px] text-gray-400 uppercase tracking-wide">Template</p>
+                  <p className="text-[13px] font-semibold text-gray-800 font-mono">{c.template_name}</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_240px]">
+                  <div className="p-4 border-b sm:border-b-0 sm:border-r border-black/[0.06]">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">Copy</p>
+                    <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{c.template_copy || '—'}</pre>
+                  </div>
+                  <div className="p-4 bg-gray-50/40 flex flex-col items-stretch gap-2">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Creative</p>
+                    {c.creative_media_link ? (
+                      <>
+                        {embed && <iframe src={embed} className="w-full h-[180px] rounded-lg border border-black/[0.06] bg-white" allow="autoplay"/>}
+                        <a href={c.creative_media_link} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline truncate">Open in Drive ↗</a>
+                      </>
+                    ) : (
+                      <p className="text-[12px] text-gray-400">No media</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AutomationsTab(){
   const automations=useDashStore(s=>s.automations)
   const [typeFilter,setTypeFilter]=useState('ALL')
+  const [activeName,setActiveName]=useState<string|null>(null)
   const filtered=useMemo(()=>typeFilter==='ALL'?automations:automations.filter(r=>r.type===typeFilter),[automations,typeFilter])
   const {sorted,toggle,dir}=useSort(filtered,'sales')
   const std=automations.filter(r=>r.type==='standard'), gk=automations.filter(r=>r.type==='cart_recovery')
@@ -544,8 +623,8 @@ function AutomationsTab(){
           <Th onClick={()=>toggle('roas')} sortDir={dir('roas')}>ROAS</Th>
         </tr></thead>
         <tbody>{sorted.map((r,i)=>(
-          <tr key={i} className="hover:bg-blue-50/40 transition-colors">
-            <Td right={false} className="font-semibold whitespace-nowrap">{r.name}</Td>
+          <tr key={i} onClick={()=>setActiveName(r.name)} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
+            <Td right={false} className="font-semibold whitespace-nowrap text-blue-700 hover:underline">{r.name}</Td>
             <Td>{r.type==='cart_recovery'?<Badge variant="amber">Cart Recovery</Badge>:<Badge variant="blue">Standard</Badge>}</Td>
             <Td className="text-gray-500 whitespace-nowrap tabular-nums">{r.date || '—'}</Td>
             <Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
@@ -560,6 +639,7 @@ function AutomationsTab(){
           </tr>
         ))}</tbody>
       </table></div></Panel>
+      {activeName && <AutomationCreativesModal automationName={activeName} onClose={()=>setActiveName(null)}/>}
     </div>
   )
 }

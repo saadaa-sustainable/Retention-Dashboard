@@ -18,6 +18,7 @@ export default function UploadModal({ onClose }: UploadModalProps) {
   const inputRef              = useRef<HTMLInputElement>(null)
   const { fetchCampaigns, fetchAutomations } = useDashStore()
 
+  const isCreatives = type === 'automation_creatives'
   const needsDate = type === 'automations' || type === 'gokwik_carts'
   const hasRange = Boolean(snapshotDateFrom || snapshotDateTo)
   const dateValid = !needsDate || (
@@ -27,9 +28,10 @@ export default function UploadModal({ onClose }: UploadModalProps) {
 
   const handleFile = (f: File) => {
     setFile(f)
-    // Auto-detect type from filename
+    // Auto-detect type from filename + extension
     const n = f.name.toLowerCase()
-    if (n.includes('gokwik') || n.includes('carts')) setType('gokwik_carts')
+    if (n.endsWith('.xlsx') || n.endsWith('.xls') || n.includes('creative')) setType('automation_creatives')
+    else if (n.includes('gokwik') || n.includes('carts')) setType('gokwik_carts')
     else if (n.includes('auto'))                      setType('automations')
     else                                              setType('campaigns')
   }
@@ -51,23 +53,28 @@ export default function UploadModal({ onClose }: UploadModalProps) {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      fd.append('type', type)
-      if (needsDate) {
-        if (snapshotDateFrom && snapshotDateTo) {
-          fd.append('date_from', snapshotDateFrom)
-          fd.append('date_to', snapshotDateTo)
-        } else {
-          fd.append('date', snapshotDate)
+      let endpoint = '/api/upload'
+      if (isCreatives) {
+        endpoint = '/api/automation-creatives'
+      } else {
+        fd.append('type', type)
+        if (needsDate) {
+          if (snapshotDateFrom && snapshotDateTo) {
+            fd.append('date_from', snapshotDateFrom)
+            fd.append('date_to', snapshotDateTo)
+          } else {
+            fd.append('date', snapshotDate)
+          }
         }
       }
-      const res  = await fetch('/api/upload', { method: 'POST', body: fd })
+      const res  = await fetch(endpoint, { method: 'POST', body: fd })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Upload failed')
       setResult(json)
       setStatus('done')
       // Refresh data
       if (type === 'campaigns') fetchCampaigns()
-      else fetchAutomations()
+      else if (!isCreatives) fetchAutomations()
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : 'Upload failed')
       setStatus('error')
@@ -79,15 +86,15 @@ export default function UploadModal({ onClose }: UploadModalProps) {
       <div className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 w-[480px] max-w-[95vw] p-6">
         {/* Header */}
         <div className="flex justify-between items-center mb-5">
-          <h2 className="text-[15px] font-semibold text-gray-900">Upload CSV Export</h2>
+          <h2 className="text-[15px] font-semibold text-gray-900">Upload Export</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
 
         {/* Export type picker */}
         <div className="mb-4">
           <label className="text-[12px] font-medium text-gray-600 mb-1.5 block">Export type</label>
-          <div className="grid grid-cols-3 gap-2">
-            {(['campaigns','automations','gokwik_carts'] as ExportType[]).map(t => (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {(['campaigns','automations','gokwik_carts','automation_creatives'] as ExportType[]).map(t => (
               <button
                 key={t}
                 onClick={() => setType(t)}
@@ -97,7 +104,10 @@ export default function UploadModal({ onClose }: UploadModalProps) {
                     : 'border-black/10 text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {t === 'campaigns' ? 'Campaigns' : t === 'automations' ? 'Automations' : 'GoKwik Carts'}
+                {t === 'campaigns' ? 'Campaigns'
+                  : t === 'automations' ? 'Automations'
+                  : t === 'gokwik_carts' ? 'GoKwik Carts'
+                  : 'Creatives'}
               </button>
             ))}
           </div>
@@ -154,11 +164,17 @@ export default function UploadModal({ onClose }: UploadModalProps) {
               <p className="text-[13px] font-medium text-gray-700">{file.name}</p>
             ) : (
               <>
-                <p className="text-[13px] font-medium text-gray-700">Drop CSV here or click to browse</p>
-                <p className="text-[11px] text-gray-400 mt-1">Accepts KwikEngage / Tellephant export files</p>
+                <p className="text-[13px] font-medium text-gray-700">
+                  {isCreatives ? 'Drop .xlsx here or click to browse' : 'Drop CSV here or click to browse'}
+                </p>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  {isCreatives
+                    ? 'Excel with columns: Automation Name, Template Name, Template Copy, Creative Media Link'
+                    : 'Accepts KwikEngage / Tellephant export files'}
+                </p>
               </>
             )}
-            <input ref={inputRef} type="file" accept=".csv" className="hidden"
+            <input ref={inputRef} type="file" accept={isCreatives ? '.xlsx,.xls' : '.csv'} className="hidden"
               onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
           </div>
         ) : status === 'uploading' ? (

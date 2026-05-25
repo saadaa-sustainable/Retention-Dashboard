@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS automations (
 --   ALTER TABLE automations ALTER COLUMN date SET NOT NULL;
 --   CREATE INDEX IF NOT EXISTS automations_name_date_idx ON automations (name, date);
 
+-- ── automation_creatives ───────────────────────────────────────────────────
+-- One row per (automation_name, template_name). Holds template body + media link
+-- shown in the AutomationsTab card view.
+CREATE TABLE IF NOT EXISTS automation_creatives (
+  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  automation_name       TEXT NOT NULL,
+  template_name         TEXT NOT NULL,
+  template_copy         TEXT,
+  creative_media_link   TEXT,
+  ingested_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT automation_creatives_name_template_unique UNIQUE (automation_name, template_name)
+);
+CREATE INDEX IF NOT EXISTS automation_creatives_name_idx ON automation_creatives (automation_name);
+
 -- ── raw_exports ────────────────────────────────────────────────────────────
 -- Stores every uploaded CSV file for audit / re-ingestion
 CREATE TABLE IF NOT EXISTS raw_exports (
@@ -177,16 +191,23 @@ ORDER BY total_sales DESC;
 
 -- ── RLS (Row Level Security) ───────────────────────────────────────────────
 -- Enable RLS — anon key can only READ; writes require service role
-ALTER TABLE campaigns    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE automations  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE raw_exports  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE utm_orders   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE campaigns            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE automations          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE automation_creatives ENABLE ROW LEVEL SECURITY;
+ALTER TABLE raw_exports          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE utm_orders           ENABLE ROW LEVEL SECURITY;
 
--- Allow anon/authenticated to read everything
-CREATE POLICY "allow_read_campaigns"   ON campaigns   FOR SELECT USING (true);
-CREATE POLICY "allow_read_automations" ON automations FOR SELECT USING (true);
-CREATE POLICY "allow_read_raw_exports" ON raw_exports FOR SELECT USING (true);
-CREATE POLICY "allow_read_utm_orders"  ON utm_orders  FOR SELECT USING (true);
+-- Allow anon/authenticated to read everything (drop-then-create makes this re-runnable)
+DROP POLICY IF EXISTS "allow_read_campaigns"            ON campaigns;
+DROP POLICY IF EXISTS "allow_read_automations"          ON automations;
+DROP POLICY IF EXISTS "allow_read_automation_creatives" ON automation_creatives;
+DROP POLICY IF EXISTS "allow_read_raw_exports"          ON raw_exports;
+DROP POLICY IF EXISTS "allow_read_utm_orders"           ON utm_orders;
+CREATE POLICY "allow_read_campaigns"            ON campaigns            FOR SELECT USING (true);
+CREATE POLICY "allow_read_automations"          ON automations          FOR SELECT USING (true);
+CREATE POLICY "allow_read_automation_creatives" ON automation_creatives FOR SELECT USING (true);
+CREATE POLICY "allow_read_raw_exports"          ON raw_exports          FOR SELECT USING (true);
+CREATE POLICY "allow_read_utm_orders"           ON utm_orders           FOR SELECT USING (true);
 
 -- Writes only via service role (API routes) — no direct client writes
 -- The service role bypasses RLS automatically
