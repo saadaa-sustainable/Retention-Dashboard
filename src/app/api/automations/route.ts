@@ -6,10 +6,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const supabase = createAdminClient()
 
+    const limit = Math.min(parseInt(searchParams.get('limit') || '10000'), 50000)
+
     let query = supabase
       .from('automations')
       .select('*')
       .order('sales', { ascending: false })
+      .range(0, limit - 1)
 
     const type     = searchParams.get('type')
     const channel  = searchParams.get('channel')

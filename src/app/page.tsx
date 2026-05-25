@@ -535,6 +535,11 @@ function AutomationCreativesModal({automationName,onClose}:{automationName:strin
       .catch(e=>{ if(!cancel) setError(e instanceof Error?e.message:'Failed to load') })
     return ()=>{ cancel=true }
   },[automationName])
+  useEffect(()=>{
+    const onKey=(e:KeyboardEvent)=>{ if(e.key==='Escape') onClose() }
+    document.addEventListener('keydown',onKey)
+    return ()=>document.removeEventListener('keydown',onKey)
+  },[onClose])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in" onClick={onClose}>
@@ -623,7 +628,7 @@ function AutomationsTab(){
           <Th onClick={()=>toggle('roas')} sortDir={dir('roas')}>ROAS</Th>
         </tr></thead>
         <tbody>{sorted.map((r,i)=>(
-          <tr key={i} onClick={()=>setActiveName(r.name)} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
+          <tr key={i} onClick={()=>{ if(r.name) setActiveName(r.name) }} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
             <Td right={false} className="font-semibold whitespace-nowrap text-blue-700 hover:underline">{r.name}</Td>
             <Td>{r.type==='cart_recovery'?<Badge variant="amber">Cart Recovery</Badge>:<Badge variant="blue">Standard</Badge>}</Td>
             <Td className="text-gray-500 whitespace-nowrap tabular-nums">{r.date || '—'}</Td>
