@@ -534,7 +534,7 @@ function driveEmbedUrl(url: string): string | null {
   return m ? `https://drive.google.com/file/d/${m[1]}/preview` : null
 }
 
-function AutomationCreativesModal({automationName,anchorRect,onClose}:{automationName:string,anchorRect:DOMRect|null,onClose:()=>void}){
+function AutomationCreativesModal({automationName,onClose}:{automationName:string,onClose:()=>void}){
   const [items,setItems]=useState<AutomationCreative[]|null>(null)
   const [error,setError]=useState<string|null>(null)
   const [activeIdx,setActiveIdx]=useState(0)
@@ -552,33 +552,13 @@ function AutomationCreativesModal({automationName,anchorRect,onClose}:{automatio
     return ()=>document.removeEventListener('keydown',onKey)
   },[onClose])
 
-  // Position the popover near the clicked row, clamped inside the viewport.
-  const POP_W = 640
-  const POP_MAX_H = 520
-  const vw = typeof window === 'undefined' ? 1200 : window.innerWidth
-  const vh = typeof window === 'undefined' ? 800 : window.innerHeight
-  let top = 80, left = Math.max(16, (vw - POP_W) / 2)
-  if (anchorRect) {
-    // Prefer just below the row; flip above if not enough space below.
-    const spaceBelow = vh - anchorRect.bottom
-    const spaceAbove = anchorRect.top
-    if (spaceBelow >= POP_MAX_H + 16 || spaceBelow >= spaceAbove) {
-      top = Math.min(anchorRect.bottom + 8, vh - 24 - Math.min(POP_MAX_H, spaceBelow - 16))
-    } else {
-      top = Math.max(16, anchorRect.top - Math.min(POP_MAX_H, spaceAbove - 16) - 8)
-    }
-    // Align left edge to the row, but keep within viewport.
-    left = Math.min(Math.max(16, anchorRect.left), vw - POP_W - 16)
-  }
-
   const active = items?.[activeIdx]
   const embed = active?.creative_media_link ? driveEmbedUrl(active.creative_media_link) : null
 
   return (
-    <div className="fixed inset-0 z-50 fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md fade-in" onClick={onClose}>
       <div
-        className="absolute bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.4)] ring-1 ring-black/10 flex flex-col overflow-hidden"
-        style={{ top, left, width: POP_W, maxWidth: '95vw', maxHeight: POP_MAX_H }}
+        className="bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.4)] ring-1 ring-black/10 w-[680px] max-w-[95vw] max-h-[85vh] flex flex-col overflow-hidden"
         onClick={e=>e.stopPropagation()}
       >
         <div className="flex justify-between items-start px-4 py-3 border-b border-black/[0.06]">
@@ -603,7 +583,7 @@ function AutomationCreativesModal({automationName,anchorRect,onClose}:{automatio
             ))}
           </div>
         )}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden min-h-0">
           {error && <div className="px-4 py-3 text-[12px] text-red-600">Failed to load creatives: {error}</div>}
           {!items && !error && <div className="px-4 py-3 text-[12px] text-gray-400">Loading…</div>}
           {items && items.length===0 && (
@@ -618,12 +598,12 @@ function AutomationCreativesModal({automationName,anchorRect,onClose}:{automatio
                 {active.creative_media_link ? (
                   <>
                     {embed
-                      ? <iframe src={embed} className="w-full h-[220px] rounded-lg border border-black/[0.06] bg-white" allow="autoplay"/>
-                      : <div className="w-full h-[220px] rounded-lg border border-black/[0.06] bg-white flex items-center justify-center text-[11px] text-gray-400">Preview not supported</div>}
+                      ? <iframe src={embed} className="w-full h-[240px] rounded-lg border border-black/[0.06] bg-white" allow="autoplay"/>
+                      : <div className="w-full h-[240px] rounded-lg border border-black/[0.06] bg-white flex items-center justify-center text-[11px] text-gray-400">Preview not supported</div>}
                     <a href={active.creative_media_link} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline truncate">Open in Drive ↗</a>
                   </>
                 ) : (
-                  <div className="w-full h-[220px] rounded-lg border border-dashed border-black/[0.1] bg-white flex items-center justify-center text-[11px] text-gray-400">No media</div>
+                  <div className="w-full h-[240px] rounded-lg border border-dashed border-black/[0.1] bg-white flex items-center justify-center text-[11px] text-gray-400">No media</div>
                 )}
               </div>
               <div className="p-3 overflow-y-auto">
@@ -642,7 +622,7 @@ function AutomationsTab(){
   const automations=useDashStore(s=>s.automations)
   const [typeFilter,setTypeFilter]=useState('ALL')
   const [search,setSearch]=useState('')
-  const [active,setActive]=useState<{name:string,rect:DOMRect}|null>(null)
+  const [activeName,setActiveName]=useState<string|null>(null)
   const filtered=useMemo(()=>{
     const q=search.trim().toLowerCase()
     return automations.filter(r=>{
@@ -690,7 +670,7 @@ function AutomationsTab(){
           <Th onClick={()=>toggle('roas')} sortDir={dir('roas')}>ROAS</Th>
         </tr></thead>
         <tbody>{sorted.map((r,i)=>(
-          <tr key={i} onClick={e=>{ if(r.name) setActive({name:r.name, rect:(e.currentTarget as HTMLTableRowElement).getBoundingClientRect()}) }} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
+          <tr key={i} onClick={()=>{ if(r.name) setActiveName(r.name) }} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
             <Td right={false} className="font-semibold whitespace-nowrap text-blue-700 hover:underline">{r.name}</Td>
             <Td>{r.type==='cart_recovery'?<Badge variant="amber">Cart Recovery</Badge>:<Badge variant="blue">Standard</Badge>}</Td>
             <Td className="text-gray-500 whitespace-nowrap tabular-nums">{r.date || '—'}</Td>
@@ -706,7 +686,7 @@ function AutomationsTab(){
           </tr>
         ))}</tbody>
       </table></div></Panel>
-      {active && <AutomationCreativesModal automationName={active.name} anchorRect={active.rect} onClose={()=>setActive(null)}/>}
+      {activeName && <AutomationCreativesModal automationName={activeName} onClose={()=>setActiveName(null)}/>}
     </div>
   )
 }
