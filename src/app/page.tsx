@@ -551,6 +551,20 @@ function AutomationCreativesModal({automationName,onClose}:{automationName:strin
     document.addEventListener('keydown',onKey)
     return ()=>document.removeEventListener('keydown',onKey)
   },[onClose])
+  useEffect(()=>{
+    // Lock body + main-pane scroll while the popover is open so wheel/touchpad
+    // can't move the page behind it. The dashboard scrolls inside <main>, not
+    // <body>, so we also freeze the main element.
+    const prevBody = document.body.style.overflow
+    const main = document.querySelector('main')
+    const prevMain = main?.style.overflow
+    document.body.style.overflow = 'hidden'
+    if (main) main.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevBody
+      if (main && prevMain !== undefined) main.style.overflow = prevMain
+    }
+  },[])
 
   const active = items?.[activeIdx]
   const embed = active?.creative_media_link ? driveEmbedUrl(active.creative_media_link) : null
