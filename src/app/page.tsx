@@ -542,8 +542,8 @@ function AutomationCreativesModal({automationName,onClose}:{automationName:strin
   },[onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 w-[720px] max-w-[95vw] max-h-[90vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md fade-in" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.4)] ring-1 ring-black/10 w-[720px] max-w-[95vw] max-h-[90vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
         <div className="flex justify-between items-start px-5 py-4 border-b border-black/[0.06]">
           <div className="min-w-0">
             <p className="text-[11px] text-gray-400 uppercase tracking-wide">Automation</p>
