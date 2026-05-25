@@ -540,9 +540,10 @@ function AutomationCreativesModal({automationName,onClose}:{automationName:strin
   const [activeIdx,setActiveIdx]=useState(0)
   useEffect(()=>{
     let cancel=false
+    setItems(null); setError(null); setActiveIdx(0)
     fetch(`/api/automation-creatives?name=${encodeURIComponent(automationName)}`)
       .then(r=>r.json())
-      .then(j=>{ if(!cancel){ setItems(j.data||[]); setActiveIdx(0) } })
+      .then(j=>{ if(!cancel) setItems(j.data||[]) })
       .catch(e=>{ if(!cancel) setError(e instanceof Error?e.message:'Failed to load') })
     return ()=>{ cancel=true }
   },[automationName])
@@ -551,84 +552,73 @@ function AutomationCreativesModal({automationName,onClose}:{automationName:strin
     document.addEventListener('keydown',onKey)
     return ()=>document.removeEventListener('keydown',onKey)
   },[onClose])
-  useEffect(()=>{
-    // Lock body + main-pane scroll while the popover is open so wheel/touchpad
-    // can't move the page behind it. The dashboard scrolls inside <main>, not
-    // <body>, so we also freeze the main element.
-    const prevBody = document.body.style.overflow
-    const main = document.querySelector('main')
-    const prevMain = main?.style.overflow
-    document.body.style.overflow = 'hidden'
-    if (main) main.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = prevBody
-      if (main && prevMain !== undefined) main.style.overflow = prevMain
-    }
-  },[])
 
   const active = items?.[activeIdx]
   const embed = active?.creative_media_link ? driveEmbedUrl(active.creative_media_link) : null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md fade-in" onClick={onClose}>
-      <div
-        className="bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.4)] ring-1 ring-black/10 w-[680px] max-w-[95vw] max-h-[85vh] flex flex-col overflow-hidden"
-        onClick={e=>e.stopPropagation()}
-      >
-        <div className="flex justify-between items-start px-4 py-3 border-b border-black/[0.06]">
-          <div className="min-w-0">
-            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Automation</p>
-            <h2 className="text-[14px] font-semibold text-gray-900 truncate" title={automationName}>{automationName}</h2>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 ml-3 text-[14px]">✕</button>
+    <aside
+      className="fixed top-0 right-0 h-screen w-[520px] max-w-[95vw] z-40 bg-white border-l border-black/[0.08] shadow-[-12px_0_40px_-12px_rgba(0,0,0,0.18)] flex flex-col drawer-slide-in"
+      role="dialog"
+      aria-label={`Creatives for ${automationName}`}
+    >
+      <div className="flex justify-between items-start px-5 py-4 border-b border-black/[0.06]">
+        <div className="min-w-0">
+          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Automation</p>
+          <h2 className="text-[14px] font-semibold text-gray-900 truncate" title={automationName}>{automationName}</h2>
+          {items && <p className="text-[11px] text-gray-500 mt-0.5">{items.length} template{items.length===1?'':'s'}</p>}
         </div>
-        {items && items.length > 1 && (
-          <div className="flex gap-1 px-3 py-2 border-b border-black/[0.06] bg-gray-50/40 overflow-x-auto">
-            {items.map((c,i)=>(
-              <button
-                key={c.id}
-                onClick={()=>setActiveIdx(i)}
-                className={`shrink-0 text-[11px] font-mono px-2.5 py-1 rounded-md border transition-colors ${
-                  i===activeIdx
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-black/[0.08] bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >{c.template_name}</button>
-            ))}
+        <button onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600 ml-3 text-[16px] leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-gray-100">✕</button>
+      </div>
+
+      {items && items.length > 1 && (
+        <div className="flex gap-1 px-4 py-2 border-b border-black/[0.06] bg-gray-50/40 overflow-x-auto">
+          {items.map((c,i)=>(
+            <button
+              key={c.id}
+              onClick={()=>setActiveIdx(i)}
+              className={`shrink-0 text-[11px] font-mono px-2.5 py-1 rounded-md border transition-colors ${
+                i===activeIdx
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-black/[0.08] bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >{c.template_name}</button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto">
+        {error && <div className="px-5 py-4 text-[12px] text-red-600">Failed to load creatives: {error}</div>}
+        {!items && !error && <div className="px-5 py-4 text-[12px] text-gray-400">Loading…</div>}
+        {items && items.length===0 && (
+          <div className="text-center py-12 px-5 text-[13px] text-gray-400">
+            No creatives mapped to <span className="font-mono">{automationName}</span> yet.<br/>
+            <span className="text-[11px]">Upload the Creatives Excel and match the automation name.</span>
           </div>
         )}
-        <div className="flex-1 overflow-hidden min-h-0">
-          {error && <div className="px-4 py-3 text-[12px] text-red-600">Failed to load creatives: {error}</div>}
-          {!items && !error && <div className="px-4 py-3 text-[12px] text-gray-400">Loading…</div>}
-          {items && items.length===0 && (
-            <div className="text-center py-10 px-4 text-[13px] text-gray-400">
-              No creatives mapped to <span className="font-mono">{automationName}</span> yet.
+        {active && (
+          <div>
+            <div className="px-5 pt-4 pb-3 bg-gray-50/40 border-b border-black/[0.06]">
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">Creative</p>
+              {active.creative_media_link ? (
+                <>
+                  {embed
+                    ? <iframe src={embed} className="w-full h-[340px] rounded-lg border border-black/[0.06] bg-white" allow="autoplay"/>
+                    : <div className="w-full h-[340px] rounded-lg border border-black/[0.06] bg-white flex items-center justify-center text-[12px] text-gray-400">Preview not supported</div>}
+                  <a href={active.creative_media_link} target="_blank" rel="noreferrer" className="inline-block mt-2 text-[11px] text-blue-600 hover:underline">Open in Drive ↗</a>
+                </>
+              ) : (
+                <div className="w-full h-[340px] rounded-lg border border-dashed border-black/[0.1] bg-white flex items-center justify-center text-[12px] text-gray-400">No media</div>
+              )}
             </div>
-          )}
-          {active && (
-            <div className="grid grid-cols-[260px_1fr] h-full">
-              <div className="p-3 bg-gray-50/40 border-r border-black/[0.06] flex flex-col gap-2 overflow-hidden">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide">Creative</p>
-                {active.creative_media_link ? (
-                  <>
-                    {embed
-                      ? <iframe src={embed} className="w-full h-[240px] rounded-lg border border-black/[0.06] bg-white" allow="autoplay"/>
-                      : <div className="w-full h-[240px] rounded-lg border border-black/[0.06] bg-white flex items-center justify-center text-[11px] text-gray-400">Preview not supported</div>}
-                    <a href={active.creative_media_link} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline truncate">Open in Drive ↗</a>
-                  </>
-                ) : (
-                  <div className="w-full h-[240px] rounded-lg border border-dashed border-black/[0.1] bg-white flex items-center justify-center text-[11px] text-gray-400">No media</div>
-                )}
-              </div>
-              <div className="p-3 overflow-y-auto">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Copy</p>
-                <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{active.template_copy || '—'}</pre>
-              </div>
+            <div className="px-5 py-4">
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">Copy</p>
+              <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{active.template_copy || '—'}</pre>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
-    </div>
+    </aside>
   )
 }
 
