@@ -534,14 +534,15 @@ function driveEmbedUrl(url: string): string | null {
   return m ? `https://drive.google.com/file/d/${m[1]}/preview` : null
 }
 
-function AutomationCreativesModal({automationName,onClose}:{automationName:string,onClose:()=>void}){
+function AutomationCreativesModal({automationName,anchorRect,onClose}:{automationName:string,anchorRect:DOMRect|null,onClose:()=>void}){
   const [items,setItems]=useState<AutomationCreative[]|null>(null)
   const [error,setError]=useState<string|null>(null)
+  const [activeIdx,setActiveIdx]=useState(0)
   useEffect(()=>{
     let cancel=false
     fetch(`/api/automation-creatives?name=${encodeURIComponent(automationName)}`)
       .then(r=>r.json())
-      .then(j=>{ if(!cancel) setItems(j.data||[]) })
+      .then(j=>{ if(!cancel){ setItems(j.data||[]); setActiveIdx(0) } })
       .catch(e=>{ if(!cancel) setError(e instanceof Error?e.message:'Failed to load') })
     return ()=>{ cancel=true }
   },[automationName])
@@ -551,53 +552,86 @@ function AutomationCreativesModal({automationName,onClose}:{automationName:strin
     return ()=>document.removeEventListener('keydown',onKey)
   },[onClose])
 
+  // Position the popover near the clicked row, clamped inside the viewport.
+  const POP_W = 640
+  const POP_MAX_H = 520
+  const vw = typeof window === 'undefined' ? 1200 : window.innerWidth
+  const vh = typeof window === 'undefined' ? 800 : window.innerHeight
+  let top = 80, left = Math.max(16, (vw - POP_W) / 2)
+  if (anchorRect) {
+    // Prefer just below the row; flip above if not enough space below.
+    const spaceBelow = vh - anchorRect.bottom
+    const spaceAbove = anchorRect.top
+    if (spaceBelow >= POP_MAX_H + 16 || spaceBelow >= spaceAbove) {
+      top = Math.min(anchorRect.bottom + 8, vh - 24 - Math.min(POP_MAX_H, spaceBelow - 16))
+    } else {
+      top = Math.max(16, anchorRect.top - Math.min(POP_MAX_H, spaceAbove - 16) - 8)
+    }
+    // Align left edge to the row, but keep within viewport.
+    left = Math.min(Math.max(16, anchorRect.left), vw - POP_W - 16)
+  }
+
+  const active = items?.[activeIdx]
+  const embed = active?.creative_media_link ? driveEmbedUrl(active.creative_media_link) : null
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md fade-in" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.4)] ring-1 ring-black/10 w-[720px] max-w-[95vw] max-h-[90vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
-        <div className="flex justify-between items-start px-5 py-4 border-b border-black/[0.06]">
+    <div className="fixed inset-0 z-50 fade-in" onClick={onClose}>
+      <div
+        className="absolute bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.4)] ring-1 ring-black/10 flex flex-col overflow-hidden"
+        style={{ top, left, width: POP_W, maxWidth: '95vw', maxHeight: POP_MAX_H }}
+        onClick={e=>e.stopPropagation()}
+      >
+        <div className="flex justify-between items-start px-4 py-3 border-b border-black/[0.06]">
           <div className="min-w-0">
-            <p className="text-[11px] text-gray-400 uppercase tracking-wide">Automation</p>
-            <h2 className="text-[15px] font-semibold text-gray-900 truncate" title={automationName}>{automationName}</h2>
-            <p className="text-[11px] text-gray-500 mt-0.5">{items?`${items.length} template${items.length===1?'':'s'}`:'Loading…'}</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Automation</p>
+            <h2 className="text-[14px] font-semibold text-gray-900 truncate" title={automationName}>{automationName}</h2>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 ml-3">✕</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 ml-3 text-[14px]">✕</button>
         </div>
-        <div className="overflow-y-auto px-5 py-4 space-y-4">
-          {error && <div className="text-[12px] text-red-600">Failed to load creatives: {error}</div>}
+        {items && items.length > 1 && (
+          <div className="flex gap-1 px-3 py-2 border-b border-black/[0.06] bg-gray-50/40 overflow-x-auto">
+            {items.map((c,i)=>(
+              <button
+                key={c.id}
+                onClick={()=>setActiveIdx(i)}
+                className={`shrink-0 text-[11px] font-mono px-2.5 py-1 rounded-md border transition-colors ${
+                  i===activeIdx
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-black/[0.08] bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >{c.template_name}</button>
+            ))}
+          </div>
+        )}
+        <div className="flex-1 overflow-hidden">
+          {error && <div className="px-4 py-3 text-[12px] text-red-600">Failed to load creatives: {error}</div>}
+          {!items && !error && <div className="px-4 py-3 text-[12px] text-gray-400">Loading…</div>}
           {items && items.length===0 && (
-            <div className="text-center py-10 text-[13px] text-gray-400">
-              No creatives mapped to <span className="font-mono">{automationName}</span> yet.<br/>
-              <span className="text-[11px]">Upload the Creatives Excel and make sure the automation name matches.</span>
+            <div className="text-center py-10 px-4 text-[13px] text-gray-400">
+              No creatives mapped to <span className="font-mono">{automationName}</span> yet.
             </div>
           )}
-          {items && items.map(c=>{
-            const embed = c.creative_media_link ? driveEmbedUrl(c.creative_media_link) : null
-            return (
-              <div key={c.id} className="border border-black/[0.08] rounded-xl overflow-hidden">
-                <div className="px-4 py-2.5 bg-gray-50/60 border-b border-black/[0.06]">
-                  <p className="text-[11px] text-gray-400 uppercase tracking-wide">Template</p>
-                  <p className="text-[13px] font-semibold text-gray-800 font-mono">{c.template_name}</p>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_240px]">
-                  <div className="p-4 border-b sm:border-b-0 sm:border-r border-black/[0.06]">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">Copy</p>
-                    <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{c.template_copy || '—'}</pre>
-                  </div>
-                  <div className="p-4 bg-gray-50/40 flex flex-col items-stretch gap-2">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Creative</p>
-                    {c.creative_media_link ? (
-                      <>
-                        {embed && <iframe src={embed} className="w-full h-[180px] rounded-lg border border-black/[0.06] bg-white" allow="autoplay"/>}
-                        <a href={c.creative_media_link} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline truncate">Open in Drive ↗</a>
-                      </>
-                    ) : (
-                      <p className="text-[12px] text-gray-400">No media</p>
-                    )}
-                  </div>
-                </div>
+          {active && (
+            <div className="grid grid-cols-[260px_1fr] h-full">
+              <div className="p-3 bg-gray-50/40 border-r border-black/[0.06] flex flex-col gap-2 overflow-hidden">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide">Creative</p>
+                {active.creative_media_link ? (
+                  <>
+                    {embed
+                      ? <iframe src={embed} className="w-full h-[220px] rounded-lg border border-black/[0.06] bg-white" allow="autoplay"/>
+                      : <div className="w-full h-[220px] rounded-lg border border-black/[0.06] bg-white flex items-center justify-center text-[11px] text-gray-400">Preview not supported</div>}
+                    <a href={active.creative_media_link} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline truncate">Open in Drive ↗</a>
+                  </>
+                ) : (
+                  <div className="w-full h-[220px] rounded-lg border border-dashed border-black/[0.1] bg-white flex items-center justify-center text-[11px] text-gray-400">No media</div>
+                )}
               </div>
-            )
-          })}
+              <div className="p-3 overflow-y-auto">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Copy</p>
+                <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{active.template_copy || '—'}</pre>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -608,7 +642,7 @@ function AutomationsTab(){
   const automations=useDashStore(s=>s.automations)
   const [typeFilter,setTypeFilter]=useState('ALL')
   const [search,setSearch]=useState('')
-  const [activeName,setActiveName]=useState<string|null>(null)
+  const [active,setActive]=useState<{name:string,rect:DOMRect}|null>(null)
   const filtered=useMemo(()=>{
     const q=search.trim().toLowerCase()
     return automations.filter(r=>{
@@ -656,7 +690,7 @@ function AutomationsTab(){
           <Th onClick={()=>toggle('roas')} sortDir={dir('roas')}>ROAS</Th>
         </tr></thead>
         <tbody>{sorted.map((r,i)=>(
-          <tr key={i} onClick={()=>{ if(r.name) setActiveName(r.name) }} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
+          <tr key={i} onClick={e=>{ if(r.name) setActive({name:r.name, rect:(e.currentTarget as HTMLTableRowElement).getBoundingClientRect()}) }} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
             <Td right={false} className="font-semibold whitespace-nowrap text-blue-700 hover:underline">{r.name}</Td>
             <Td>{r.type==='cart_recovery'?<Badge variant="amber">Cart Recovery</Badge>:<Badge variant="blue">Standard</Badge>}</Td>
             <Td className="text-gray-500 whitespace-nowrap tabular-nums">{r.date || '—'}</Td>
@@ -672,7 +706,7 @@ function AutomationsTab(){
           </tr>
         ))}</tbody>
       </table></div></Panel>
-      {activeName && <AutomationCreativesModal automationName={activeName} onClose={()=>setActiveName(null)}/>}
+      {active && <AutomationCreativesModal automationName={active.name} anchorRect={active.rect} onClose={()=>setActive(null)}/>}
     </div>
   )
 }
