@@ -597,8 +597,17 @@ function AutomationCreativesModal({automationName,onClose}:{automationName:strin
 function AutomationsTab(){
   const automations=useDashStore(s=>s.automations)
   const [typeFilter,setTypeFilter]=useState('ALL')
+  const [search,setSearch]=useState('')
   const [activeName,setActiveName]=useState<string|null>(null)
-  const filtered=useMemo(()=>typeFilter==='ALL'?automations:automations.filter(r=>r.type===typeFilter),[automations,typeFilter])
+  const filtered=useMemo(()=>{
+    const q=search.trim().toLowerCase()
+    return automations.filter(r=>{
+      if(typeFilter!=='ALL' && r.type!==typeFilter) return false
+      if(!q) return true
+      const hay=`${r.name} ${r.type} ${r.channel} ${r.date||''} ${r.sent} ${r.delivered} ${r.sales} ${r.orders} ${r.buyers} ${r.cost} ${r.roas??''} ${r.ctr??''}`.toLowerCase()
+      return hay.includes(q)
+    })
+  },[automations,typeFilter,search])
   const {sorted,toggle,dir}=useSort(filtered,'sales')
   const std=automations.filter(r=>r.type==='standard'), gk=automations.filter(r=>r.type==='cart_recovery')
   return(
@@ -607,11 +616,17 @@ function AutomationsTab(){
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
         {[['Auto Sales',cur(sumKey(std,'sales'))],['Auto Orders',fmt(sumKey(std,'orders'))],['Auto Buyers',fmt(sumKey(std,'buyers'))],['Auto Cost',cur(sumKey(std,'cost'))],['Carts Recovered',cur(sumKey(gk,'recovered_amount'))],['Carts Won',fmt(sumKey(gk,'recovered_carts'))]].map(([l,v])=><MetricCard key={l} label={l} value={v}/>)}
       </div>
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-[12px] text-gray-500">{filtered.length} automations</p>
-        <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} className="h-8 text-[12px] px-2 rounded-md border border-black/[0.12] bg-white text-gray-700 focus:outline-none">
-          <option value="ALL">All Types</option><option value="standard">Standard</option><option value="cart_recovery">Cart Recovery (GoKwik)</option>
-        </select>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{filtered.length}</span> automations</p>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 border border-black/[0.08] rounded-lg px-2.5 h-8 bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-colors">
+            <Search size={13} className="text-gray-400" />
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, channel, date…" className="border-none bg-transparent text-[12px] outline-none w-52 text-gray-700 placeholder:text-gray-400"/>
+          </div>
+          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} className="h-8 text-[12px] px-2 rounded-md border border-black/[0.12] bg-white text-gray-700 focus:outline-none">
+            <option value="ALL">All Types</option><option value="standard">Standard</option><option value="cart_recovery">Cart Recovery (GoKwik)</option>
+          </select>
+        </div>
       </div>
       <Panel><div className="overflow-x-auto"><table className="w-full" style={{minWidth:'900px'}}>
         <thead className="bg-gray-50/60 sticky top-0 z-[1]"><tr>
