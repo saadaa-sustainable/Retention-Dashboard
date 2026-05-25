@@ -473,8 +473,8 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
       </div>
 
       <Panel>
-        <div className="overflow-x-auto"><table className="w-full" style={{minWidth:'900px'}}>
-          <thead className="bg-gray-50/60 sticky top-0 z-[1]"><tr>
+        <div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full" style={{minWidth:'900px'}}>
+          <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]"><tr>
             <Th right={false} onClick={()=>toggle('segment')} sortDir={dir('segment')}>Segment</Th>
             <Th onClick={()=>toggle('date')} sortDir={dir('date')}>Date</Th>
             <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
@@ -659,8 +659,8 @@ function AutomationsTab(){
           </select>
         </div>
       </div>
-      <Panel><div className="overflow-x-auto"><table className="w-full" style={{minWidth:'900px'}}>
-        <thead className="bg-gray-50/60 sticky top-0 z-[1]"><tr>
+      <Panel><div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full" style={{minWidth:'900px'}}>
+        <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]"><tr>
           <Th right={false} onClick={()=>toggle('name')} sortDir={dir('name')}>Automation</Th>
           <Th>Type</Th>
           <Th onClick={()=>toggle('date')} sortDir={dir('date')}>As of</Th>
@@ -732,8 +732,8 @@ function SegmentTab(){
           </div>
         </PanelBody></Panel>
       </div>
-      <Panel><div className="overflow-x-auto"><table className="w-full" style={{minWidth:'780px'}}>
-        <thead className="bg-gray-50/60 sticky top-0 z-[1]"><tr>
+      <Panel><div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full" style={{minWidth:'780px'}}>
+        <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]"><tr>
           <Th right={false} onClick={()=>toggle('segment')} sortDir={dir('segment')}>Segment</Th>
           <Th onClick={()=>toggle('campaign_count')} sortDir={dir('campaign_count')}>Campaigns</Th>
           <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
@@ -791,8 +791,8 @@ function OfferTab(){
           </div>
         </PanelBody></Panel>
       </div>
-      <Panel><div className="overflow-x-auto"><table className="w-full" style={{minWidth:'680px'}}>
-        <thead className="bg-gray-50/60 sticky top-0 z-[1]"><tr>
+      <Panel><div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full" style={{minWidth:'680px'}}>
+        <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]"><tr>
           <Th right={false}>Offer Type</Th>
           <Th onClick={()=>toggle('campaign_count')} sortDir={dir('campaign_count')}>Campaigns</Th>
           <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
@@ -942,8 +942,8 @@ function HistoricalTab(){
           </ResponsiveContainer>
         </PanelBody></Panel>
       </div>
-      <Panel><div className="overflow-x-auto"><table className="w-full">
-        <thead className="bg-gray-50/60 sticky top-0 z-[1]"><tr>
+      <Panel><div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full">
+        <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]"><tr>
           <Th right={false} onClick={()=>toggle('date')} sortDir={dir('date')}>Date</Th>
           <Th onClick={()=>toggle('campaign_count')} sortDir={dir('campaign_count')}>Campaigns</Th>
           <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
