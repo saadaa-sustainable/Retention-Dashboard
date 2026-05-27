@@ -18,7 +18,9 @@ export default function UploadModal({ onClose }: UploadModalProps) {
   const inputRef              = useRef<HTMLInputElement>(null)
   const { fetchCampaigns, fetchAutomations } = useDashStore()
 
-  const isCreatives = type === 'automation_creatives'
+  const isAutoCreatives = type === 'automation_creatives'
+  const isCampCreatives = type === 'campaign_creatives'
+  const isCreatives = isAutoCreatives || isCampCreatives
   const needsDate = type === 'automations' || type === 'gokwik_carts'
   const hasRange = Boolean(snapshotDateFrom || snapshotDateTo)
   const dateValid = !needsDate || (
@@ -30,7 +32,9 @@ export default function UploadModal({ onClose }: UploadModalProps) {
     setFile(f)
     // Auto-detect type from filename + extension
     const n = f.name.toLowerCase()
-    if (n.endsWith('.xlsx') || n.endsWith('.xls') || n.includes('creative')) setType('automation_creatives')
+    const isXl = n.endsWith('.xlsx') || n.endsWith('.xls')
+    if (isXl && n.includes('campaign')) setType('campaign_creatives')
+    else if (isXl || n.includes('creative')) setType('automation_creatives')
     else if (n.includes('gokwik') || n.includes('carts')) setType('gokwik_carts')
     else if (n.includes('auto'))                      setType('automations')
     else                                              setType('campaigns')
@@ -54,8 +58,10 @@ export default function UploadModal({ onClose }: UploadModalProps) {
       const fd = new FormData()
       fd.append('file', file)
       let endpoint = '/api/upload'
-      if (isCreatives) {
+      if (isAutoCreatives) {
         endpoint = '/api/automation-creatives'
+      } else if (isCampCreatives) {
+        endpoint = '/api/campaign-creatives'
       } else {
         fd.append('type', type)
         if (needsDate) {
@@ -93,8 +99,8 @@ export default function UploadModal({ onClose }: UploadModalProps) {
         {/* Export type picker */}
         <div className="mb-4">
           <label className="text-[12px] font-medium text-gray-600 mb-1.5 block">Export type</label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {(['campaigns','automations','gokwik_carts','automation_creatives'] as ExportType[]).map(t => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {(['campaigns','automations','gokwik_carts','automation_creatives','campaign_creatives'] as ExportType[]).map(t => (
               <button
                 key={t}
                 onClick={() => setType(t)}
@@ -107,7 +113,8 @@ export default function UploadModal({ onClose }: UploadModalProps) {
                 {t === 'campaigns' ? 'Campaigns'
                   : t === 'automations' ? 'Automations'
                   : t === 'gokwik_carts' ? 'GoKwik Carts'
-                  : 'Creatives'}
+                  : t === 'automation_creatives' ? 'Auto Creatives'
+                  : 'Camp Creatives'}
               </button>
             ))}
           </div>
@@ -168,8 +175,10 @@ export default function UploadModal({ onClose }: UploadModalProps) {
                   {isCreatives ? 'Drop .xlsx here or click to browse' : 'Drop CSV here or click to browse'}
                 </p>
                 <p className="text-[11px] text-gray-400 mt-1">
-                  {isCreatives
-                    ? 'Excel with columns: Automation Name, Template Name, Template Copy, Creative Media Link'
+                  {isAutoCreatives
+                    ? 'Excel: Automation Name, Template Name, Template Copy, Creative Media Link'
+                    : isCampCreatives
+                    ? 'Excel: Campaign ID, Channel, Template Name, Template Copy, Creative Media Link'
                     : 'Accepts KwikEngage / Tellephant export files'}
                 </p>
               </>

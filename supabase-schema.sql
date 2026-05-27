@@ -82,6 +82,20 @@ CREATE TABLE IF NOT EXISTS automation_creatives (
 );
 CREATE INDEX IF NOT EXISTS automation_creatives_name_idx ON automation_creatives (automation_name);
 
+-- ── campaign_creatives ─────────────────────────────────────────────────────
+-- One row per (campaign_id, template_name). Looked up by campaign_id.
+CREATE TABLE IF NOT EXISTS campaign_creatives (
+  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  campaign_id           TEXT NOT NULL,
+  channel               TEXT,
+  template_name         TEXT NOT NULL,
+  template_copy         TEXT,
+  creative_media_link   TEXT,
+  ingested_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT campaign_creatives_unique UNIQUE (campaign_id, template_name)
+);
+CREATE INDEX IF NOT EXISTS campaign_creatives_campaign_id_idx ON campaign_creatives (campaign_id);
+
 -- ── raw_exports ────────────────────────────────────────────────────────────
 -- Stores every uploaded CSV file for audit / re-ingestion
 CREATE TABLE IF NOT EXISTS raw_exports (
@@ -194,6 +208,7 @@ ORDER BY total_sales DESC;
 ALTER TABLE campaigns            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE automations          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE automation_creatives ENABLE ROW LEVEL SECURITY;
+ALTER TABLE campaign_creatives   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE raw_exports          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE utm_orders           ENABLE ROW LEVEL SECURITY;
 
@@ -201,11 +216,13 @@ ALTER TABLE utm_orders           ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_read_campaigns"            ON campaigns;
 DROP POLICY IF EXISTS "allow_read_automations"          ON automations;
 DROP POLICY IF EXISTS "allow_read_automation_creatives" ON automation_creatives;
+DROP POLICY IF EXISTS "allow_read_campaign_creatives"   ON campaign_creatives;
 DROP POLICY IF EXISTS "allow_read_raw_exports"          ON raw_exports;
 DROP POLICY IF EXISTS "allow_read_utm_orders"           ON utm_orders;
 CREATE POLICY "allow_read_campaigns"            ON campaigns            FOR SELECT USING (true);
 CREATE POLICY "allow_read_automations"          ON automations          FOR SELECT USING (true);
 CREATE POLICY "allow_read_automation_creatives" ON automation_creatives FOR SELECT USING (true);
+CREATE POLICY "allow_read_campaign_creatives"   ON campaign_creatives   FOR SELECT USING (true);
 CREATE POLICY "allow_read_raw_exports"          ON raw_exports          FOR SELECT USING (true);
 CREATE POLICY "allow_read_utm_orders"           ON utm_orders           FOR SELECT USING (true);
 

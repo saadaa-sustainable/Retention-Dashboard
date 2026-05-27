@@ -404,6 +404,7 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
   const [search,setSearch]=useState('')
   const [page,setPage]=useState(0)
   const [perPage,setPerPage]=useState(10)
+  const [activeCampaignId,setActiveCampaignId]=useState<string|null>(null)
 
   const scoped=useMemo(()=>campaigns.filter(c=>groupKey(c.campaign_id)===campaignId && categorize(c.segment,c.name)===category),[campaigns,campaignId,category])
   const filtered=useMemo(()=>scoped.filter(r=>!search||r.name.toLowerCase().includes(search)||r.segment.toLowerCase().includes(search)),[scoped,search])
@@ -488,8 +489,8 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
             <Th onClick={()=>toggle('roas')} sortDir={dir('roas')}>ROAS</Th>
           </tr></thead>
           <tbody>{paged.map((r,i)=>(
-            <tr key={i} className="hover:bg-blue-50/40 transition-colors">
-              <Td right={false}><p className="text-[12px] truncate max-w-[220px] text-gray-800" title={r.segment}>{r.segment||'—'}</p><p className="text-[10px] text-gray-400 truncate max-w-[220px]" title={r.name}>{r.offer} · {r.format}</p></Td>
+            <tr key={i} onClick={()=>{ if(r.campaign_id) setActiveCampaignId(r.campaign_id) }} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
+              <Td right={false}><p className="text-[12px] truncate max-w-[220px] text-blue-700 hover:underline" title={r.segment}>{r.segment||'—'}</p><p className="text-[10px] text-gray-400 truncate max-w-[220px]" title={r.name}>{r.campaign_id} · {r.offer} · {r.format}</p></Td>
               <Td className="text-gray-500 whitespace-nowrap">{r.date?.slice(5)}</Td>
               <Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
               <Td><DrBadge dr={deliveryRate(r)}/></Td>
@@ -517,36 +518,39 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
           </div>
         </div>
       </Panel>
+      {activeCampaignId && <CreativesDrawer label={activeCampaignId} sublabel="Campaign" fetchUrl={`/api/campaign-creatives?campaign_id=${encodeURIComponent(activeCampaignId)}`} onClose={()=>setActiveCampaignId(null)}/>}
     </div>
   )
 }
 
-type AutomationCreative = {
+type CreativeItem = {
   id: string
-  automation_name: string
   template_name: string
   template_copy: string | null
   creative_media_link: string | null
 }
 
 function driveEmbedUrl(url: string): string | null {
-  const m = url.match(/\/file\/d\/([^/]+)/) || url.match(/[?&]id=([^&]+)/)
-  return m ? `https://drive.google.com/file/d/${m[1]}/preview` : null
+  const fileMatch = url.match(/\/file\/d\/([^/]+)/) || url.match(/[?&]id=([^&]+)/)
+  if (fileMatch) return `https://drive.google.com/file/d/${fileMatch[1]}/preview`
+  const folderMatch = url.match(/\/folders\/([^/?#]+)/)
+  if (folderMatch) return `https://drive.google.com/embeddedfolderview?id=${folderMatch[1]}#grid`
+  return null
 }
 
-function AutomationCreativesModal({automationName,onClose}:{automationName:string,onClose:()=>void}){
-  const [items,setItems]=useState<AutomationCreative[]|null>(null)
+function CreativesDrawer({label,sublabel,fetchUrl,onClose}:{label:string,sublabel:string,fetchUrl:string,onClose:()=>void}){
+  const [items,setItems]=useState<CreativeItem[]|null>(null)
   const [error,setError]=useState<string|null>(null)
   const [activeIdx,setActiveIdx]=useState(0)
   useEffect(()=>{
     let cancel=false
     setItems(null); setError(null); setActiveIdx(0)
-    fetch(`/api/automation-creatives?name=${encodeURIComponent(automationName)}`)
+    fetch(fetchUrl)
       .then(r=>r.json())
       .then(j=>{ if(!cancel) setItems(j.data||[]) })
       .catch(e=>{ if(!cancel) setError(e instanceof Error?e.message:'Failed to load') })
     return ()=>{ cancel=true }
-  },[automationName])
+  },[fetchUrl])
   useEffect(()=>{
     const onKey=(e:KeyboardEvent)=>{ if(e.key==='Escape') onClose() }
     document.addEventListener('keydown',onKey)
@@ -560,12 +564,12 @@ function AutomationCreativesModal({automationName,onClose}:{automationName:strin
     <aside
       className="fixed top-0 right-0 h-screen w-[520px] max-w-[95vw] z-40 bg-white border-l border-black/[0.08] shadow-[-12px_0_40px_-12px_rgba(0,0,0,0.18)] flex flex-col drawer-slide-in"
       role="dialog"
-      aria-label={`Creatives for ${automationName}`}
+      aria-label={`Creatives for ${label}`}
     >
       <div className="flex justify-between items-start px-5 py-4 border-b border-black/[0.06]">
         <div className="min-w-0">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Automation</p>
-          <h2 className="text-[14px] font-semibold text-gray-900 truncate" title={automationName}>{automationName}</h2>
+          <p className="text-[10px] text-gray-400 uppercase tracking-wide">{sublabel}</p>
+          <h2 className="text-[14px] font-semibold text-gray-900 truncate" title={label}>{label}</h2>
           {items && <p className="text-[11px] text-gray-500 mt-0.5">{items.length} template{items.length===1?'':'s'}</p>}
         </div>
         <button onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600 ml-3 text-[16px] leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-gray-100">✕</button>
@@ -592,8 +596,8 @@ function AutomationCreativesModal({automationName,onClose}:{automationName:strin
         {!items && !error && <div className="px-5 py-4 text-[12px] text-gray-400">Loading…</div>}
         {items && items.length===0 && (
           <div className="text-center py-12 px-5 text-[13px] text-gray-400">
-            No creatives mapped to <span className="font-mono">{automationName}</span> yet.<br/>
-            <span className="text-[11px]">Upload the Creatives Excel and match the automation name.</span>
+            No creatives mapped to <span className="font-mono">{label}</span> yet.<br/>
+            <span className="text-[11px]">Upload the Creatives Excel and match the {sublabel.toLowerCase()}.</span>
           </div>
         )}
         {active && (
@@ -690,7 +694,7 @@ function AutomationsTab(){
           </tr>
         ))}</tbody>
       </table></div></Panel>
-      {activeName && <AutomationCreativesModal automationName={activeName} onClose={()=>setActiveName(null)}/>}
+      {activeName && <CreativesDrawer label={activeName} sublabel="Automation" fetchUrl={`/api/automation-creatives?name=${encodeURIComponent(activeName)}`} onClose={()=>setActiveName(null)}/>}
     </div>
   )
 }

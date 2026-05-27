@@ -146,9 +146,21 @@ export interface AutomationCreative {
   ingested_at: string
 }
 
+// ── Campaign creatives ─────────────────────────────────────────────────────
+
+export interface CampaignCreative {
+  id: string
+  campaign_id: string
+  channel: string | null
+  template_name: string
+  template_copy: string | null
+  creative_media_link: string | null
+  ingested_at: string
+}
+
 // ── Upload / ingestion ─────────────────────────────────────────────────────
 
-export type ExportType = 'campaigns' | 'automations' | 'gokwik_carts' | 'automation_creatives'
+export type ExportType = 'campaigns' | 'automations' | 'gokwik_carts' | 'automation_creatives' | 'campaign_creatives'
 
 export interface UploadResult {
   success: boolean
