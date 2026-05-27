@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { useDashStore } from '@/lib/store'
-import { computeKpis, computeFunnel, computeSegments, computeOffers, computeDaily, fmtCurrency, fmtNumber, fmtPct, safeDivide, deliveryRate, openRate, revenuePerDel, sumKey } from '@/lib/metrics'
+import { computeKpis, computeFunnel, computeOffers, computeDaily, fmtCurrency, fmtNumber, fmtPct, safeDivide, deliveryRate, openRate, revenuePerDel, sumKey } from '@/lib/metrics'
 import { DEFS } from '@/lib/definitions'
 import Sidebar, { type TabId } from '@/components/layout/Sidebar'
 import TopBar from '@/components/layout/TopBar'
@@ -717,19 +717,70 @@ function AutomationsTab(){
   )
 }
 
+type SegRow = {
+  key: string            // category name or raw segment name
+  campaign_count: number
+  sent: number; delivered: number; seen: number; clicks: number
+  buyers: number; sales: number; orders: number; cost: number
+  delivery_rate: number; open_rate: number; roas: number; revenue_per_delivered: number
+}
+
+function aggregateBy<T extends string>(
+  campaigns: ReturnType<typeof useDashStore.getState>['campaigns'],
+  keyFn: (c: typeof campaigns[number]) => T,
+  filter?: (c: typeof campaigns[number]) => boolean,
+): SegRow[] {
+  const map = new Map<string, SegRow>()
+  for (const r of campaigns) {
+    if (filter && !filter(r)) continue
+    const k = keyFn(r)
+    let m = map.get(k)
+    if (!m) {
+      m = { key:k, campaign_count:0, sent:0, delivered:0, seen:0, clicks:0, buyers:0, sales:0, orders:0, cost:0, delivery_rate:0, open_rate:0, roas:0, revenue_per_delivered:0 }
+      map.set(k, m)
+    }
+    m.campaign_count++
+    m.sent += r.sent||0; m.delivered += r.delivered||0; m.seen += r.seen||0; m.clicks += r.clicks||0
+    m.buyers += r.buyers||0; m.sales += r.sales||0; m.orders += r.orders||0; m.cost += r.cost||0
+  }
+  return [...map.values()].map(m => ({
+    ...m,
+    delivery_rate:         safe(m.delivered, m.sent) * 100,
+    open_rate:             safe(m.seen, m.delivered) * 100,
+    roas:                  safe(m.sales, m.cost),
+    revenue_per_delivered: safe(m.sales, m.delivered),
+  }))
+}
+
 function SegmentTab(){
   const campaigns=useDashStore(s=>s.campaigns)
-  const segs=useMemo(()=>computeSegments(campaigns),[campaigns])
-  const {sorted,toggle,dir}=useSort(segs,'sales')
-  const top5=segs.slice(0,5)
+  const [openCat,setOpenCat]=useState<SegmentCategory|null>(null)
+
+  // Aggregate by high-level segment category (LTV buckets, ABC, ATC, …)
+  const categoryRows=useMemo(()=>aggregateBy(campaigns, c => categorize(c.segment, c.name)).sort((a,b)=>b.sales-a.sales),[campaigns])
+
+  // When a category is opened, aggregate raw segments WITHIN that category
+  const segmentRows=useMemo(()=>{
+    if(!openCat) return []
+    return aggregateBy(
+      campaigns,
+      c => c.segment || '(no segment)',
+      c => categorize(c.segment, c.name) === openCat,
+    ).sort((a,b)=>b.sales-a.sales)
+  },[campaigns, openCat])
+
+  const activeRows = openCat ? segmentRows : categoryRows
+  const {sorted,toggle,dir}=useSort(activeRows,'sales')
+  const top5 = categoryRows.slice(0,5)
+
   return(
     <div>
       <DefinitionsPanel items={DEFS.segment}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
-          <PanelTitle>Top segments by sales</PanelTitle>
+          <PanelTitle>Top categories by sales</PanelTitle>
           <ResponsiveContainer width="100%" height={210}>
-            <BarChart layout="vertical" data={top5.map(s=>({name:s.segment.length>20?s.segment.slice(0,20)+'…':s.segment,sales:s.sales}))}>
+            <BarChart layout="vertical" data={top5.map(s=>({name:s.key,sales:s.sales}))}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" horizontal={false}/>
               <XAxis type="number" tick={{fontSize:9}} tickFormatter={v=>'₹'+Math.round(v/1000)+'k'}/>
               <YAxis dataKey="name" type="category" tick={{fontSize:9}} width={120}/>
@@ -739,11 +790,11 @@ function SegmentTab(){
           </ResponsiveContainer>
         </PanelBody></Panel>
         <Panel><PanelBody>
-          <PanelTitle>Top segments by ROAS</PanelTitle>
+          <PanelTitle>Top categories by ROAS</PanelTitle>
           <div className="space-y-2">
-            {[...segs].filter(s=>s.cost>0).sort((a,b)=>b.roas-a.roas).slice(0,6).map((s,i)=>(
-              <div key={s.segment} className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-500 min-w-[130px] truncate" title={s.segment}>{s.segment}</span>
+            {[...categoryRows].filter(s=>s.cost>0).sort((a,b)=>b.roas-a.roas).slice(0,6).map((s,i)=>(
+              <div key={s.key} className="flex items-center gap-2">
+                <span className="text-[10px] text-gray-500 min-w-[130px] truncate" title={s.key}>{s.key}</span>
                 <div className="flex-1 h-5 bg-gray-100 rounded overflow-hidden">
                   <div className="h-full flex items-center pl-2 rounded" style={{width:`${Math.min(s.roas/80*100,100)}%`,background:COLORS[i%COLORS.length],minWidth:'50px'}}>
                     <span className="text-[10px] text-white font-semibold">{s.roas.toFixed(1)}x</span>
@@ -754,9 +805,30 @@ function SegmentTab(){
           </div>
         </PanelBody></Panel>
       </div>
+
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        {openCat ? (
+          <>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={()=>setOpenCat(null)} className="flex items-center gap-1.5 text-[12px] text-gray-600 hover:text-gray-900 h-8 px-3 rounded-lg border border-black/[0.08] bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors">
+                <span className="text-[14px] leading-none">←</span> All categories
+              </button>
+              <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
+                <button onClick={()=>setOpenCat(null)} className="hover:text-blue-600 transition-colors">Segment categories</button>
+                <span>›</span>
+                <span className="text-gray-700 font-medium">{openCat}</span>
+              </div>
+            </div>
+            <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{segmentRows.length}</span> raw segment{segmentRows.length===1?'':'s'} in this category</p>
+          </>
+        ) : (
+          <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{categoryRows.length}</span> segment categor{categoryRows.length===1?'y':'ies'} · click a row to see raw segments</p>
+        )}
+      </div>
+
       <Panel><div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full" style={{minWidth:'780px'}}>
         <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]"><tr>
-          <Th right={false} onClick={()=>toggle('segment')} sortDir={dir('segment')}>Segment</Th>
+          <Th right={false} onClick={()=>toggle('key')} sortDir={dir('key')}>{openCat ? 'Raw Segment' : 'Category'}</Th>
           <Th onClick={()=>toggle('campaign_count')} sortDir={dir('campaign_count')}>Campaigns</Th>
           <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
           <Th onClick={()=>toggle('delivered')} sortDir={dir('delivered')}>Delivered</Th>
@@ -766,18 +838,27 @@ function SegmentTab(){
           <Th onClick={()=>toggle('roas')} sortDir={dir('roas')}>ROAS</Th>
           <Th onClick={()=>toggle('revenue_per_delivered')} sortDir={dir('revenue_per_delivered')}>Rev/Del</Th>
         </tr></thead>
-        <tbody>{sorted.map((r,i)=>(
-          <tr key={i} className="hover:bg-blue-50/40 transition-colors">
-            <Td right={false} className="font-semibold text-[11px] max-w-[170px] truncate" title={r.segment}>{r.segment}</Td>
-            <Td>{r.campaign_count}</Td><Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
-            <Td><DrBadge dr={r.delivery_rate}/></Td>
-            <Td>{fmtPct(r.open_rate)}</Td>
-            <Td>{r.buyers||'—'}</Td>
-            <Td className={r.sales>0?'text-green-700 font-semibold':'text-gray-400'}>{r.sales>0?cur(r.sales):'—'}</Td>
-            <Td><RoasBadge roas={r.roas}/></Td>
-            <Td>{'₹'+r.revenue_per_delivered.toFixed(2)}</Td>
-          </tr>
-        ))}</tbody>
+        <tbody>{sorted.map((r,i)=>{
+          const clickable = !openCat
+          return (
+            <tr
+              key={i}
+              onClick={clickable ? ()=>setOpenCat(r.key as SegmentCategory) : undefined}
+              className={`hover:bg-blue-50/40 transition-colors ${clickable?'cursor-pointer':''}`}
+            >
+              <Td right={false} className={`font-semibold text-[11px] max-w-[220px] truncate ${clickable?'text-blue-700 hover:underline':''}`} title={r.key}>{r.key}</Td>
+              <Td>{r.campaign_count}</Td><Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
+              <Td><DrBadge dr={r.delivery_rate}/></Td>
+              <Td>{fmtPct(r.open_rate)}</Td>
+              <Td>{r.buyers||'—'}</Td>
+              <Td className={r.sales>0?'text-green-700 font-semibold':'text-gray-400'}>{r.sales>0?cur(r.sales):'—'}</Td>
+              <Td><RoasBadge roas={r.roas}/></Td>
+              <Td>{'₹'+r.revenue_per_delivered.toFixed(2)}</Td>
+            </tr>
+          )
+        })}
+        {sorted.length===0 && <tr><td colSpan={10} className="text-center py-10 text-[12px] text-gray-400">No segments in this category.</td></tr>}
+        </tbody>
       </table></div></Panel>
     </div>
   )
