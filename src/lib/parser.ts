@@ -64,20 +64,45 @@ function normalizeDateValue(v: unknown): string | null {
 }
 
 // ── Parse campaign name → dimensions ──────────────────────────────────────
+// Per the naming convention doc:
+//   L3 Content Theme codes: BST, PRC, USP, VRP, EDU, UGC, IMW, OFF, HR
+//   L5 Offer V1 codes (real OFFERS, only inside OFF campaigns): RS, B2, B3G1, OF-PL, LYL
+//
+// IMPORTANT: L3 content themes are NOT offers. The `offer` field only stores
+// L5 V1 codes — empty string for campaigns that aren't running an offer.
+// Offer codes appear with one of 4 prefix variants: OFF_, OFF-, OF_, OF-
+// e.g. `OFF_RS`, `OFF-RS`, `OF_RS`, `OF-RS` all encode the RS (RAHOSAADAA) offer.
+
+const OFFER_V1_CODES = ['RS', 'B2', 'B3G1', 'LYL'] as const
+const FORMAT_CODES = ['IMG', 'TXT', 'VID', 'DOC', 'ICAR'] as const
+
+function extractOfferCode(name: string): string {
+  // V1 codes preceded by an OFF/OF prefix and bounded by separators.
+  for (const code of OFFER_V1_CODES) {
+    const re = new RegExp(`(?:^|[_-])(?:OFF|OF)[_-]${code}(?:[_-]|$)`, 'i')
+    if (re.test(name)) return code
+  }
+  // Pre-Launch: V1 code is literally "OF-PL". Accept either an OFF_OF-PL/OFF-OF-PL
+  // wrapper, or a bare OF-PL (with separators around it).
+  if (/(?:^|[_-])(?:OFF[_-])?OF[_-]PL(?:[_-]|$)/i.test(name)) return 'OF-PL'
+  return ''
+}
+
+function extractFormat(name: string): string {
+  for (const f of FORMAT_CODES) {
+    const re = new RegExp(`(?:^|[_-])${f}(?:[_-]|$)`, 'i')
+    if (re.test(name)) return f
+  }
+  return ''
+}
+
 export function parseCampaignName(name: string) {
   const parts = name.split('_')
-  const campaign_id  = parts[0] || ''
-  const source_type  = parts[1] || ''
-
-  // Extract offer code from name
-  const offerCodes = ['USP','NCL','COD','POLL','B2','B3G1','RS','LYL','MAR','UGC','BST']
-  const offer = offerCodes.find(o => name.includes(o)) || 'USP'
-
-  // Extract format
-  const formats = ['IMG','TXT','VID','DOC','ICAR']
-  const format = formats.find(f => name.includes(f)) || 'IMG'
-
-  return { campaign_id, source_type, offer, format }
+  const campaign_id = parts[0] || ''
+  const source_type = parts[1] || ''
+  // offer = L5 V1 code only (RS, B2, B3G1, OF-PL, LYL). Empty for non-OFF campaigns.
+  const offer = extractOfferCode(name)
+  return { campaign_id, source_type, offer, format: extractFormat(name) || 'IMG' }
 }
 
 // ── Extract included segment from source string ────────────────────────────

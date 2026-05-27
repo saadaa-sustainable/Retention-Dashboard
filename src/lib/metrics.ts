@@ -100,10 +100,14 @@ export function computeSegments(campaigns: Campaign[]): SegmentSummary[] {
 }
 
 // ── Offer aggregation ──────────────────────────────────────────────────────
+// Only includes campaigns that have a real L5 offer code (RS, B2, B3G1, OF-PL, LYL).
+// Non-OFF campaigns (empty `offer` field) are excluded — they're not offers and
+// would otherwise pollute the analysis as an "Unknown" bucket.
 export function computeOffers(campaigns: Campaign[]): OfferSummary[] {
   const map = new Map<string, OfferSummary>()
   campaigns.forEach(r => {
-    const offer = r.offer || 'Unknown'
+    if (!r.offer) return
+    const offer = r.offer
     if (!map.has(offer)) {
       map.set(offer, {
         offer, campaign_count: 0,
