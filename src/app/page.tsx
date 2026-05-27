@@ -1087,7 +1087,9 @@ function RevenueTab(){
 
 function HistoricalTab(){
   const campaigns=useDashStore(s=>s.campaigns)
-  const daily=useMemo(()=>computeDaily(campaigns),[campaigns])
+  // Take only the most recent 15 days that have data. computeDaily returns ascending,
+  // so slice(-15) keeps the trailing window.
+  const daily=useMemo(()=>computeDaily(campaigns).slice(-15),[campaigns])
   const {sorted,toggle,dir}=useSort(daily,'date','asc')
   const salesData=daily.map(d=>({date:d.date.slice(5),sales:d.sales,buyers:d.buyers}))
   const sentData=daily.map(d=>({date:d.date.slice(5),sent:d.sent,delivered:d.delivered}))
