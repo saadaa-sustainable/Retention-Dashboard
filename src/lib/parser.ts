@@ -66,25 +66,44 @@ function normalizeDateValue(v: unknown): string | null {
 // ── Parse campaign name → dimensions ──────────────────────────────────────
 // Per the naming convention doc:
 //   L3 Content Theme codes: BST, PRC, USP, VRP, EDU, UGC, IMW, OFF, HR
-//   L5 Offer V1 codes (real OFFERS, only inside OFF campaigns): RS, B2, B3G1, OF-PL, LYL
+//   L5 Offer codes: appear with prefix variants OFF_, OFF-, OF_, OF-
+//     followed by the actual offer name. Names in production are full words
+//     like RAHOSAADAA, SAADAA350, FREETOTE, B2G10 — not just the short
+//     abbreviations (RS, B2, B3G1) listed in the doc.
 //
 // IMPORTANT: L3 content themes are NOT offers. The `offer` field only stores
-// L5 V1 codes — empty string for campaigns that aren't running an offer.
-// Offer codes appear with one of 4 prefix variants: OFF_, OFF-, OF_, OF-
-// e.g. `OFF_RS`, `OFF-RS`, `OF_RS`, `OF-RS` all encode the RS (RAHOSAADAA) offer.
+// what follows the OFF/OF prefix — empty string for campaigns that aren't
+// running an offer.
 
-const OFFER_V1_CODES = ['RS', 'B2', 'B3G1', 'LYL'] as const
 const FORMAT_CODES = ['IMG', 'TXT', 'VID', 'DOC', 'ICAR'] as const
 
+// Tokens that can appear after an OFF/OF prefix but aren't real offer codes —
+// they're format codes (IMG/TXT/…), L3 themes (USP/BST/…), L5 V2 types
+// (PER/VAL/FRE), or template version markers (T1/T2/…). When the regex captures
+// one of these we keep looking for a real offer further along the name.
+const NON_OFFER_CODES = new Set([
+  'BST', 'PRC', 'USP', 'VRP', 'EDU', 'UGC', 'IMW', 'HR',
+  'PER', 'VAL', 'FRE',
+  'IMG', 'TXT', 'VID', 'DOC', 'ICAR',
+  'T1', 'T2', 'T3', 'T4', 'T5', 'T6',
+])
+
 function extractOfferCode(name: string): string {
-  // V1 codes preceded by an OFF/OF prefix and bounded by separators.
-  for (const code of OFFER_V1_CODES) {
-    const re = new RegExp(`(?:^|[_-])(?:OFF|OF)[_-]${code}(?:[_-]|$)`, 'i')
-    if (re.test(name)) return code
+  // Pre-Launch: V1 code is documented as literal "OF-PL". Match `OF[-_]PL`
+  // (optionally wrapped by an OFF prefix) before the generic case so the
+  // captured offer is "OF-PL" rather than just "PL".
+  if (/(?:^|[_-])(?:OFF[_-])?OF[-_]PL(?:[_-]|$)/i.test(name)) return 'OF-PL'
+
+  // Generic case: any token following an OFF/OF prefix delimited by _ or -.
+  // The offer code is the part after the prefix, up to the next _ or end.
+  // Iterate ALL matches and skip blacklisted captures (e.g. OFF_T1 → T1 is
+  // a template version, not an offer; OFF_IMG → IMG is a format code).
+  const re = /(?:^|[_-])(?:OFF|OF)[-_]([A-Z][A-Z0-9]*)(?=[_-]|$)/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(name)) !== null) {
+    const code = m[1].toUpperCase()
+    if (!NON_OFFER_CODES.has(code)) return code
   }
-  // Pre-Launch: V1 code is literally "OF-PL". Accept either an OFF_OF-PL/OFF-OF-PL
-  // wrapper, or a bare OF-PL (with separators around it).
-  if (/(?:^|[_-])(?:OFF[_-])?OF[_-]PL(?:[_-]|$)/i.test(name)) return 'OF-PL'
   return ''
 }
 
