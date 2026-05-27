@@ -922,9 +922,11 @@ function OfferTab(){
         <Panel><PanelBody>
           <PanelTitle>Revenue by {scope==='campaigns'?'offer type':'automation type'}</PanelTitle>
           <ResponsiveContainer width="100%" height={210}>
-            <PieChart><Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label={({name,percent}:{name?:string;percent?:number})=>(percent||0)>=0.04?`${name} ${((percent||0)*100).toFixed(0)}%`:''} labelLine={false}>{pieData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Pie>
+            <PieChart margin={{top:0,right:0,bottom:0,left:0}}>
+              <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={62} label={({percent}:{percent?:number})=>(percent||0)>=0.05?`${((percent||0)*100).toFixed(0)}%`:''} labelLine={false} fontSize={10}>{pieData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Pie>
+              <Tooltip formatter={(v)=>['₹'+new Intl.NumberFormat('en-IN').format(Math.round(Number(v)||0)),'Sales']} contentStyle={{fontSize:11}}/>
               <Legend wrapperStyle={{fontSize:10,paddingTop:8}}/>
-              <Tooltip formatter={(v)=>['₹'+new Intl.NumberFormat('en-IN').format(Math.round(Number(v)||0)),'Sales']} contentStyle={{fontSize:11}}/></PieChart>
+            </PieChart>
           </ResponsiveContainer>
         </PanelBody></Panel>
         <Panel><PanelBody>
