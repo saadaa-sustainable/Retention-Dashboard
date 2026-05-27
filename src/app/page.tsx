@@ -933,11 +933,11 @@ function OfferTab(){
           <PanelTitle>Quick comparison</PanelTitle>
           <div className="divide-y divide-black/[0.06]">
             {rows.map(o=>(
-              <div key={o.key} className="flex items-center justify-between py-2 gap-2">
-                <span className="font-semibold text-[13px]">{o.key}</span>
-                <span className="text-[11px] text-gray-400">{o.campaign_count} {countLabel}</span>
-                <span className="text-green-700 font-semibold text-[12px]">{o.sales>0?cur(o.sales):'—'}</span>
-                <RoasBadge roas={o.roas}/>
+              <div key={o.key} className="grid grid-cols-[1fr_auto_auto_56px] items-center py-2 gap-3">
+                <span className="font-semibold text-[13px] truncate" title={o.key}>{o.key}</span>
+                <span className="text-[11px] text-gray-400 text-right tabular-nums whitespace-nowrap">{o.campaign_count} {countLabel}</span>
+                <span className="text-green-700 font-semibold text-[12px] text-right tabular-nums whitespace-nowrap">{o.sales>0?cur(o.sales):'—'}</span>
+                <div className="flex justify-end"><RoasBadge roas={o.roas}/></div>
               </div>
             ))}
           </div>
