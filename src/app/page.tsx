@@ -75,18 +75,17 @@ function groupKey(id:string):string{
 }
 
 function categorize(segment:string, name?:string):SegmentCategory{
-  const s=(segment||'').trim()
-  // 1) Cleanest signal: the segment field itself starts with a known token
+  const s=(segment||'').trim().toUpperCase()
+  // 1) Cleanest signal: the segment field itself starts with a known token (case-insensitive)
   for(const [token,cat] of CATEGORY_TOKENS){
-    if(s.startsWith(token)) return cat
+    if(s.startsWith(token.toUpperCase())) return cat
   }
-  // 2) Fallback: scan the full campaign name for the earliest token occurrence
-  //    (handles rows where the segment field is missing or doesn't start with the token)
+  // 2) Fallback: scan the full campaign name for the earliest token occurrence (case-insensitive)
   if(name){
-    const n=name.trim()
+    const n=name.trim().toUpperCase()
     let best:{pos:number,cat:SegmentCategory}|null=null
     for(const [token,cat] of CATEGORY_TOKENS){
-      const pos=n.indexOf(token)
+      const pos=n.indexOf(token.toUpperCase())
       if(pos>=0 && (!best || pos<best.pos)) best={pos,cat}
     }
     if(best) return best.cat

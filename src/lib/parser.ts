@@ -125,19 +125,47 @@ export function parseCampaignName(name: string) {
 }
 
 // ── Extract included segment from source string ────────────────────────────
+// Stop tokens that signal the end of the segment portion in a campaign name.
+// Everything after one of these (content theme code or format code) is post-segment.
+const SEGMENT_STOP = /_(BST|PRC|USP|VRP|EDU|UGC|IMW|HR|OFF|OF|IMG|TXT|VID|DOC|ICAR)(?:[_-]|$)/i
+
+// Markers that indicate where the segment starts inside the campaign name.
+// Anchored to the start of string OR a `_`/`-` separator (NOT \b, which fails
+// against `_` since `_` is a word char). The captured group is the marker
+// itself, used to compute the segment-start offset.
+const SEGMENT_MARKER = /(?:^|[_-])(\d+<LTV(?:<\d+)?|ATC|ABC|CNB|DNC|RNC|failed|KP=\d+|L\d+D|P-L\d+D|Winterwear)/i
+
+function fallbackSegmentFromName(name: string): string {
+  const m = name.match(SEGMENT_MARKER)
+  if (!m) return ''
+  // m.index points at the leading separator (if any). Step past it to land on
+  // the actual marker text captured in m[1].
+  const leadOffset = m[0].length - m[1].length
+  const start = (m.index ?? 0) + leadOffset
+  const tail = name.slice(start)
+  const stop = tail.match(SEGMENT_STOP)
+  const end = stop ? start + (stop.index ?? 0) : name.length
+  return name.slice(start, end).replace(/[_-]+$/, '').trim()
+}
+
 export function extractSegment(source: string, name: string): string {
-  if (!source || typeof source !== 'string') {
-    // Fall back to parsing from name
-    const parts = name.split('_')
-    return parts.slice(1, -3).join('_') || name
-  }
-  const lines = source.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('Included Segment') && i + 1 < lines.length) {
-      return lines[i + 1].trim()
+  // Preferred: the CSV "Source" column may contain a literal "Included Segment"
+  // header followed by the segment name on the next line.
+  if (source && typeof source === 'string') {
+    const lines = source.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('Included Segment') && i + 1 < lines.length) {
+        const seg = lines[i + 1].trim()
+        if (seg) return seg
+      }
     }
   }
-  return name
+  // Fallback: derive a segment portion from the campaign name itself.
+  // Crucially we do NOT return the full name — that's what was leaking entire
+  // campaign IDs (like "C128_RET_CNB_26042026_USP_IMG_SUMM…") into the raw
+  // segments column. If no segment marker exists, return '' so the row is
+  // grouped as "Other / no segment" downstream.
+  return fallbackSegmentFromName(name)
 }
 
 // ── Parse campaigns CSV ───────────────────────────────────────────────────
