@@ -4,6 +4,7 @@ import { useDashStore } from '@/lib/store'
 import { computeKpis, computeFunnel, computeOffers, computeDaily, fmtCurrency, fmtNumber, fmtPct, safeDivide, deliveryRate, openRate, revenuePerDel, sumKey } from '@/lib/metrics'
 import { DEFS } from '@/lib/definitions'
 import Sidebar, { type TabId } from '@/components/layout/Sidebar'
+import type { Campaign, Automation } from '@/types'
 import TopBar from '@/components/layout/TopBar'
 import UploadModal from '@/components/ui/UploadModal'
 import { KpiCard, MetricCard, Panel, PanelBody, PanelTitle, DefinitionsPanel, FunnelRow, Badge, RoasBadge, DrBadge, Th, Td } from '@/components/ui'
@@ -864,29 +865,74 @@ function SegmentTab(){
   )
 }
 
+type OfferRow = {
+  key: string
+  campaign_count: number
+  sent: number; delivered: number; clicks: number; buyers: number
+  sales: number; orders: number; cost: number
+  ctr: number; roas: number; revenue_per_delivered: number; buyer_conversion: number
+}
+
 function OfferTab(){
   const campaigns=useDashStore(s=>s.campaigns)
-  const offers=useMemo(()=>computeOffers(campaigns),[campaigns])
-  const {sorted,toggle,dir}=useSort(offers,'sales')
-  const pieData=useMemo(()=>offers.filter(o=>o.sales>0).map((o,i)=>({name:o.offer,value:o.sales,fill:COLORS[i%COLORS.length]})),[offers])
+  const automations=useDashStore(s=>s.automations)
+  const [scope,setScope]=useState<Scope>('campaigns')
+  const dimensionLabel = scope==='campaigns' ? 'Offer Type' : 'Automation Type'
+  const countLabel = scope==='campaigns' ? 'campaigns' : 'automations'
+
+  const rows=useMemo<OfferRow[]>(()=>{
+    if(scope==='campaigns'){
+      return computeOffers(campaigns).map(o=>({
+        key:o.offer, campaign_count:o.campaign_count,
+        sent:o.sent, delivered:o.delivered, clicks:o.clicks, buyers:o.buyers,
+        sales:o.sales, orders:o.orders, cost:o.cost,
+        ctr:o.ctr, roas:o.roas, revenue_per_delivered:o.revenue_per_delivered, buyer_conversion:o.buyer_conversion,
+      }))
+    }
+    const map=new Map<string,OfferRow>()
+    for(const a of automations){
+      const key = a.type==='cart_recovery' ? 'Cart Recovery' : 'Standard'
+      let m=map.get(key)
+      if(!m){
+        m={key,campaign_count:0,sent:0,delivered:0,clicks:0,buyers:0,sales:0,orders:0,cost:0,ctr:0,roas:0,revenue_per_delivered:0,buyer_conversion:0}
+        map.set(key,m)
+      }
+      m.campaign_count++
+      m.sent+=a.sent||0; m.delivered+=a.delivered||0; m.clicks+=a.clicks||0
+      m.buyers+=a.buyers||0; m.sales+=(a.sales||0)+(a.recovered_amount||0)
+      m.orders+=a.orders||0; m.cost+=a.cost||0
+    }
+    return [...map.values()].map(m=>({
+      ...m,
+      ctr: safe(m.clicks,m.delivered)*100,
+      roas: safe(m.sales,m.cost),
+      revenue_per_delivered: safe(m.sales,m.delivered),
+      buyer_conversion: safe(m.buyers,m.clicks)*100,
+    })).sort((a,b)=>b.sales-a.sales)
+  },[scope,campaigns,automations])
+
+  const {sorted,toggle,dir}=useSort(rows,'sales')
+  const pieData=useMemo(()=>rows.filter(o=>o.sales>0).map((o,i)=>({name:o.key,value:o.sales,fill:COLORS[i%COLORS.length]})),[rows])
+
   return(
     <div>
       <DefinitionsPanel items={DEFS.offer}/>
+      <ScopeToggle scope={scope} onChange={setScope}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
-          <PanelTitle>Revenue by offer type</PanelTitle>
+          <PanelTitle>Revenue by {scope==='campaigns'?'offer type':'automation type'}</PanelTitle>
           <ResponsiveContainer width="100%" height={210}>
             <PieChart><Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label={({name,percent}:{name?:string;percent?:number})=>`${name} ${((percent||0)*100).toFixed(0)}%`} labelLine={false}>{pieData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Pie>
               <Tooltip formatter={(v)=>['₹'+new Intl.NumberFormat('en-IN').format(Math.round(Number(v)||0)),'Sales']} contentStyle={{fontSize:11}}/></PieChart>
           </ResponsiveContainer>
         </PanelBody></Panel>
         <Panel><PanelBody>
-          <PanelTitle>Offer quick comparison</PanelTitle>
+          <PanelTitle>Quick comparison</PanelTitle>
           <div className="divide-y divide-black/[0.06]">
-            {offers.map(o=>(
-              <div key={o.offer} className="flex items-center justify-between py-2 gap-2">
-                <span className="font-semibold text-[13px]">{o.offer}</span>
-                <span className="text-[11px] text-gray-400">{o.campaign_count} campaigns</span>
+            {rows.map(o=>(
+              <div key={o.key} className="flex items-center justify-between py-2 gap-2">
+                <span className="font-semibold text-[13px]">{o.key}</span>
+                <span className="text-[11px] text-gray-400">{o.campaign_count} {countLabel}</span>
                 <span className="text-green-700 font-semibold text-[12px]">{o.sales>0?cur(o.sales):'—'}</span>
                 <RoasBadge roas={o.roas}/>
               </div>
@@ -896,8 +942,8 @@ function OfferTab(){
       </div>
       <Panel><div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full" style={{minWidth:'680px'}}>
         <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]"><tr>
-          <Th right={false}>Offer Type</Th>
-          <Th onClick={()=>toggle('campaign_count')} sortDir={dir('campaign_count')}>Campaigns</Th>
+          <Th right={false}>{dimensionLabel}</Th>
+          <Th onClick={()=>toggle('campaign_count')} sortDir={dir('campaign_count')}>{scope==='campaigns'?'Campaigns':'Automations'}</Th>
           <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
           <Th onClick={()=>toggle('delivered')} sortDir={dir('delivered')}>Delivered</Th>
           <Th onClick={()=>toggle('ctr')} sortDir={dir('ctr')}>Avg CTR</Th>
@@ -909,7 +955,7 @@ function OfferTab(){
         </tr></thead>
         <tbody>{sorted.map((r,i)=>(
           <tr key={i} className="hover:bg-blue-50/40 transition-colors">
-            <Td right={false} className="font-semibold">{r.offer}</Td>
+            <Td right={false} className="font-semibold">{r.key}</Td>
             <Td>{r.campaign_count}</Td><Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
             <Td>{fmtPct(r.ctr)}</Td><Td>{r.buyers||'—'}</Td>
             <Td className={r.sales>0?'text-green-700 font-semibold':'text-gray-400'}>{r.sales>0?cur(r.sales):'—'}</Td>
@@ -923,14 +969,38 @@ function OfferTab(){
   )
 }
 
+type Scope = 'campaigns' | 'automations'
+function ScopeToggle({scope,onChange}:{scope:Scope,onChange:(s:Scope)=>void}){
+  return (
+    <div className="inline-flex rounded-lg border border-black/[0.08] bg-white p-0.5 mb-4">
+      {(['campaigns','automations'] as Scope[]).map(s=>(
+        <button
+          key={s}
+          onClick={()=>onChange(s)}
+          className={`px-3 h-7 text-[11.5px] rounded-md transition-colors ${
+            scope===s
+              ? 'bg-blue-50 text-blue-700 font-semibold'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >{s==='campaigns'?'Campaigns':'Automations'}</button>
+      ))}
+    </div>
+  )
+}
+
 function FunnelTab(){
   const campaigns=useDashStore(s=>s.campaigns)
-  const f=useMemo(()=>computeFunnel(campaigns),[campaigns])
-  const topDR=useMemo(()=>[...campaigns].sort((a,b)=>deliveryRate(b)-deliveryRate(a)).slice(0,5),[campaigns])
-  const botDR=useMemo(()=>[...campaigns].sort((a,b)=>deliveryRate(a)-deliveryRate(b)).slice(0,5),[campaigns])
+  const automations=useDashStore(s=>s.automations)
+  const [scope,setScope]=useState<Scope>('campaigns')
+  const rows = scope==='campaigns' ? campaigns : automations
+  const f=useMemo(()=>computeFunnel(rows),[rows])
+  const topDR=useMemo(()=>[...rows].sort((a,b)=>deliveryRate(b)-deliveryRate(a)).slice(0,5),[rows])
+  const botDR=useMemo(()=>[...rows].sort((a,b)=>deliveryRate(a)-deliveryRate(b)).slice(0,5),[rows])
+  const labelFor = (r: typeof rows[number]) => 'segment' in r ? (r as Campaign).segment : (r as Automation).name
   return(
     <div>
       <DefinitionsPanel items={DEFS.funnel}/>
+      <ScopeToggle scope={scope} onChange={setScope}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
           <PanelTitle>Full messaging funnel</PanelTitle>
@@ -943,9 +1013,9 @@ function FunnelTab(){
         </PanelBody></Panel>
         <Panel><PanelBody>
           <PanelTitle>Best delivery rate</PanelTitle>
-          <div className="space-y-1.5 mb-4">{topDR.map(r=><div key={r.id} className="flex items-center justify-between gap-2"><span className="text-[10px] text-gray-500 flex-1 truncate" title={r.segment}>{r.segment}</span><DrBadge dr={deliveryRate(r)}/></div>)}</div>
+          <div className="space-y-1.5 mb-4">{topDR.map(r=><div key={r.id} className="flex items-center justify-between gap-2"><span className="text-[10px] text-gray-500 flex-1 truncate" title={labelFor(r)}>{labelFor(r)}</span><DrBadge dr={deliveryRate(r)}/></div>)}</div>
           <PanelTitle>Lowest delivery rate</PanelTitle>
-          <div className="space-y-1.5">{botDR.map(r=><div key={r.id} className="flex items-center justify-between gap-2"><span className="text-[10px] text-gray-500 flex-1 truncate" title={r.segment}>{r.segment}</span><DrBadge dr={deliveryRate(r)}/></div>)}</div>
+          <div className="space-y-1.5">{botDR.map(r=><div key={r.id} className="flex items-center justify-between gap-2"><span className="text-[10px] text-gray-500 flex-1 truncate" title={labelFor(r)}>{labelFor(r)}</span><DrBadge dr={deliveryRate(r)}/></div>)}</div>
         </PanelBody></Panel>
       </div>
       <Panel><PanelBody>
@@ -960,23 +1030,28 @@ function FunnelTab(){
 
 function RevenueTab(){
   const campaigns=useDashStore(s=>s.campaigns)
+  const automations=useDashStore(s=>s.automations)
+  const [scope,setScope]=useState<Scope>('campaigns')
+  const rows = scope==='campaigns' ? campaigns : automations
+  const labelFor = (r: typeof rows[number]) => 'segment' in r ? (r as Campaign).segment : (r as Automation).name
   const {ts,td,tsal,tb,to,tcost,tc,top10}=useMemo(()=>{
     let ts=0,td=0,tsal=0,tb=0,to=0,tcost=0,tc=0
-    for(const r of campaigns){
+    for(const r of rows){
       ts+=r.sent||0; td+=r.delivered||0; tsal+=r.sales||0
       tb+=r.buyers||0; to+=r.orders||0; tcost+=r.cost||0; tc+=r.clicks||0
     }
-    const top10=[...campaigns].sort((a,b)=>revenuePerDel(b)-revenuePerDel(a)).slice(0,10)
+    const top10=[...rows].sort((a,b)=>revenuePerDel(b)-revenuePerDel(a)).slice(0,10)
     return {ts,td,tsal,tb,to,tcost,tc,top10}
-  },[campaigns])
+  },[rows])
   const buckets=useMemo(()=>{
     const b:Record<string,number>={'0–3x':0,'3–10x':0,'10–30x':0,'30–60x':0,'60x+':0}
-    campaigns.forEach(r=>{if(!r.roas||r.roas<=0)return;if(r.roas<3)b['0–3x']++;else if(r.roas<10)b['3–10x']++;else if(r.roas<30)b['10–30x']++;else if(r.roas<60)b['30–60x']++;else b['60x+']++})
+    rows.forEach(r=>{if(!r.roas||r.roas<=0)return;if(r.roas<3)b['0–3x']++;else if(r.roas<10)b['3–10x']++;else if(r.roas<30)b['10–30x']++;else if(r.roas<60)b['30–60x']++;else b['60x+']++})
     return Object.entries(b).map(([name,value],i)=>({name,value,fill:['#E24B4A','#EF9F27','#1D9E75','#378ADD','#7F77DD'][i]}))
-  },[campaigns])
+  },[rows])
   return(
     <div>
       <DefinitionsPanel items={DEFS.revenue}/>
+      <ScopeToggle scope={scope} onChange={setScope}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
         {[['Total Revenue',cur(tsal)],['Total Cost',cur(tcost)],['Overall ROAS',safe(tsal,tcost).toFixed(2)+'x'],['Rev/Delivered','₹'+safe(tsal,td).toFixed(2)],['Rev/Sent','₹'+safe(tsal,ts).toFixed(2)],['Cost per Buyer',cur(safe(tcost,tb))],['Cost per Order',cur(safe(tcost,to))],['Order Conversion',safe(to,tc).toFixed(2)+'%']].map(([l,v])=><MetricCard key={l} label={l} value={v}/>)}
       </div>
@@ -987,7 +1062,7 @@ function RevenueTab(){
             {top10.map((r,i)=>(
               <div key={r.id} className="flex items-center gap-2 py-1.5">
                 <span className="text-[11px] text-gray-400 font-semibold min-w-[18px]">{i+1}.</span>
-                <span className="text-[10px] text-gray-500 flex-1 truncate" title={r.segment}>{r.segment}</span>
+                <span className="text-[10px] text-gray-500 flex-1 truncate" title={labelFor(r)}>{labelFor(r)}</span>
                 <span className="text-green-700 font-semibold text-[12px]">₹{revenuePerDel(r).toFixed(2)}</span>
                 <RoasBadge roas={r.roas}/>
               </div>
@@ -1001,7 +1076,7 @@ function RevenueTab(){
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false}/>
               <XAxis dataKey="name" tick={{fontSize:10}}/><YAxis tick={{fontSize:9}} allowDecimals={false}/>
               <Tooltip contentStyle={{fontSize:11}}/>
-              <Bar dataKey="value" name="Campaigns" radius={[3,3,0,0]}>{buckets.map((b,i)=><Cell key={i} fill={b.fill}/>)}</Bar>
+              <Bar dataKey="value" name={scope==='campaigns'?'Campaigns':'Automations'} radius={[3,3,0,0]}>{buckets.map((b,i)=><Cell key={i} fill={b.fill}/>)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </PanelBody></Panel>

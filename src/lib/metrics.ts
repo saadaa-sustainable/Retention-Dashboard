@@ -52,14 +52,14 @@ export function computeKpis(campaigns: Campaign[]): KpiSummary {
   }
 }
 
-// ── Funnel metrics from campaign array ────────────────────────────────────
-export function computeFunnel(campaigns: Campaign[]): FunnelMetrics {
-  const sent      = sumKey(campaigns, 'sent')
-  const delivered = sumKey(campaigns, 'delivered')
-  const seen      = sumKey(campaigns, 'seen')
-  const clicks    = sumKey(campaigns, 'clicks')
-  const buyers    = sumKey(campaigns, 'buyers')
-  const orders    = sumKey(campaigns, 'orders')
+// ── Funnel metrics from campaign or automation array ─────────────────────
+export function computeFunnel(rows: (Campaign | Automation)[]): FunnelMetrics {
+  const sent      = sumKey(rows, 'sent')
+  const delivered = sumKey(rows, 'delivered')
+  const seen      = sumKey(rows, 'seen')
+  const clicks    = sumKey(rows, 'clicks')
+  const buyers    = sumKey(rows, 'buyers')
+  const orders    = sumKey(rows, 'orders')
 
   return {
     sent, delivered, seen, clicks, buyers, orders,
