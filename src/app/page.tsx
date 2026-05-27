@@ -7,7 +7,7 @@ import Sidebar, { type TabId } from '@/components/layout/Sidebar'
 import TopBar from '@/components/layout/TopBar'
 import UploadModal from '@/components/ui/UploadModal'
 import { KpiCard, MetricCard, Panel, PanelBody, PanelTitle, DefinitionsPanel, FunnelRow, Badge, RoasBadge, DrBadge, Th, Td } from '@/components/ui'
-import { ShoppingCart, Tag, ShoppingBag, MessageCircle, Play, UserPlus, Search } from 'lucide-react'
+import { ShoppingCart, Tag, ShoppingBag, MessageCircle, Play, UserPlus, Search, Image as ImageIcon } from 'lucide-react'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts'
 
 const COLORS = ['#378ADD','#1D9E75','#BA7517','#D85A30','#7F77DD','#0F6E56','#993556','#634FA0']
@@ -177,6 +177,7 @@ function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
   const campaigns=useDashStore(s=>s.campaigns)
   const [search,setSearch]=useState('')
   const [sortBy,setSortBy]=useState<'sales'|'sent'|'roas'|'campaign_id'>('sales')
+  const [activeCampaignId,setActiveCampaignId]=useState<string|null>(null)
 
   const cards=useMemo<CampaignCard[]>(()=>{
     const map=new Map<string,CampaignCard&{segments:Set<string>,members:Set<string>}>()
@@ -238,10 +239,14 @@ function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
         <div className="bg-white rounded-xl border border-black/[0.06] py-16 text-center text-[13px] text-gray-400">No campaigns match your search.</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {sorted.map(c=>(
-            <button key={c.campaign_id}
+          {sorted.map(c=>{
+            const isSingleCampaign = /^C\d/i.test(c.campaign_id)
+            return (
+            <div key={c.campaign_id}
+              role="button" tabIndex={0}
               onClick={()=>onOpen(c.campaign_id)}
-              className="text-left bg-white rounded-xl border border-black/[0.06] hover:border-blue-300 hover:shadow-md hover:-translate-y-0.5 transition-all p-4 group">
+              onKeyDown={e=>{ if(e.key==='Enter'||e.key===' ') onOpen(c.campaign_id) }}
+              className="text-left bg-white rounded-xl border border-black/[0.06] hover:border-blue-300 hover:shadow-md hover:-translate-y-0.5 transition-all p-4 group cursor-pointer">
               <div className="flex items-start justify-between mb-3">
                 <div className="min-w-0">
                   <p className="text-[15px] font-semibold text-gray-900">{c.campaign_id}</p>
@@ -250,7 +255,19 @@ function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
                     {c.segment_count} segment{c.segment_count===1?'':'s'} · {c.send_count} send{c.send_count===1?'':'s'}
                   </p>
                 </div>
-                <span className="text-gray-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all text-[14px]">→</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {isSingleCampaign && (
+                    <button
+                      onClick={e=>{ e.stopPropagation(); setActiveCampaignId(c.campaign_id) }}
+                      title="View creatives"
+                      aria-label={`View creatives for ${c.campaign_id}`}
+                      className="h-7 px-2 inline-flex items-center gap-1 rounded-md border border-black/[0.08] bg-white text-gray-500 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors text-[10.5px]"
+                    >
+                      <ImageIcon size={12}/> Creatives
+                    </button>
+                  )}
+                  <span className="text-gray-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all text-[14px]">→</span>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
                 <div>
@@ -271,10 +288,11 @@ function CampaignsCardsView({onOpen}:{onOpen:(id:string)=>void}){
                 </div>
               </div>
               {c.last_date && <p className="text-[10px] text-gray-400 mt-3 pt-2.5 border-t border-black/[0.04]">Last sent · <span className="tabular-nums text-gray-500">{c.last_date}</span></p>}
-            </button>
-          ))}
+            </div>
+          )})}
         </div>
       )}
+      {activeCampaignId && <CreativesDrawer label={activeCampaignId} sublabel="Campaign" fetchUrl={`/api/campaign-creatives?campaign_id=${encodeURIComponent(activeCampaignId)}`} onClose={()=>setActiveCampaignId(null)}/>}
     </div>
   )
 }
