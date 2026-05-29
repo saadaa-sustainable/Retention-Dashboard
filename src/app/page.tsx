@@ -1,13 +1,13 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
-import { useDashStore } from '@/lib/store'
+import { useDashStore, type DataScope } from '@/lib/store'
 import { computeKpis, computeFunnel, computeOffers, computeDaily, fmtCurrency, fmtNumber, fmtPct, safeDivide, deliveryRate, openRate, revenuePerDel, sumKey } from '@/lib/metrics'
 import { DEFS } from '@/lib/definitions'
 import Sidebar, { type TabId } from '@/components/layout/Sidebar'
 import type { Campaign, Automation } from '@/types'
 import TopBar from '@/components/layout/TopBar'
 import UploadModal from '@/components/ui/UploadModal'
-import { KpiCard, MetricCard, Panel, PanelBody, PanelTitle, DefinitionsPanel, FunnelRow, Badge, RoasBadge, DrBadge, Th, Td } from '@/components/ui'
+import { KpiCard, MetricCard, Panel, PanelBody, PanelTitle, DefinitionsPanel, FunnelRow, RoasBadge, DrBadge, Th, Td } from '@/components/ui'
 import { ShoppingCart, Tag, ShoppingBag, MessageCircle, Play, UserPlus, Search, Image as ImageIcon } from 'lucide-react'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts'
 
@@ -95,12 +95,17 @@ function categorize(segment:string, name?:string):SegmentCategory{
 
 function OverviewTab(){
   const campaigns=useDashStore(s=>s.campaigns)
+  const automations=useDashStore(s=>s.automations)
+  const scope=useDashStore(s=>s.scope)
+  const setScope=useDashStore(s=>s.setScope)
+  const rows = scope==='campaigns' ? campaigns : automations
+  const isCamp = scope==='campaigns'
   const {kpi,funnel,top6,avgDR,avgOR,avgCTR,avgROAS,tcost,tsal,td,ts,tunsub}=useMemo(()=>{
-    const kpi=computeKpis(campaigns)
-    const funnel=computeFunnel(campaigns)
-    const top6=[...campaigns].sort((a,b)=>b.sales-a.sales).slice(0,6)
+    const kpi=computeKpis(rows as Campaign[])
+    const funnel=computeFunnel(rows)
+    const top6=[...rows].sort((a,b)=>b.sales-a.sales).slice(0,6)
     let ts=0,td=0,tse=0,tcost=0,tsal=0,tunsub=0,ctrSum=0,ctrCount=0,roasSum=0,roasCount=0
-    for(const r of campaigns){
+    for(const r of rows){
       ts+=r.sent||0; td+=r.delivered||0; tse+=r.seen||0
       tcost+=r.cost||0; tsal+=r.sales||0; tunsub+=r.unsubscribers||0
       if(r.ctr&&r.ctr>0){ ctrSum+=r.ctr; ctrCount++ }
@@ -114,10 +119,12 @@ function OverviewTab(){
       avgCTR: ctrCount ? ctrSum/ctrCount : 0,
       avgROAS: roasCount ? roasSum/roasCount : 0,
     }
-  },[campaigns])
+  },[rows])
+  const labelFor = (r: typeof rows[number]) => isCamp ? (r as Campaign).segment : (r as Automation).name
   return(
     <div>
       <DefinitionsPanel items={DEFS.overview}/>
+      <ScopeToggle scope={scope} onChange={setScope}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 mb-5">
         <KpiCard icon={<ShoppingCart size={18}/>} label="Total Orders"    value={fmt(kpi.total_orders)}/>
         <KpiCard icon={<Tag size={18}/>}          label="Total Sales"     value={cur(kpi.total_sales)}/>
@@ -128,9 +135,9 @@ function OverviewTab(){
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
-          <PanelTitle>Top campaigns by sales</PanelTitle>
+          <PanelTitle>Top {isCamp?'campaigns':'automations'} by sales</PanelTitle>
           <ResponsiveContainer width="100%" height={210}>
-            <BarChart data={top6.map(r=>({name:r.segment.length>18?r.segment.slice(0,18)+'…':r.segment,sales:r.sales}))}>
+            <BarChart data={top6.map(r=>{const l=labelFor(r);return{name:l.length>18?l.slice(0,18)+'…':l,sales:r.sales}})}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false}/>
               <XAxis dataKey="name" tick={{fontSize:9}} angle={-35} textAnchor="end" height={55}/>
               <YAxis tick={{fontSize:9}} tickFormatter={v=>'₹'+Math.round(v/1000)+'k'}/>
@@ -646,71 +653,71 @@ function CreativesDrawer({label,sublabel,fetchUrl,onClose}:{label:string,sublabe
 
 function AutomationsTab(){
   const automations=useDashStore(s=>s.automations)
-  const [typeFilter,setTypeFilter]=useState('ALL')
   const [search,setSearch]=useState('')
   const [activeName,setActiveName]=useState<string|null>(null)
+  // Type filtering is handled globally via the TopBar "All Types" filter
+  // (applied at fetch time); here we only do free-text search.
   const filtered=useMemo(()=>{
     const q=search.trim().toLowerCase()
+    if(!q) return automations
     return automations.filter(r=>{
-      if(typeFilter!=='ALL' && r.type!==typeFilter) return false
-      if(!q) return true
       const hay=`${r.name} ${r.type} ${r.channel} ${r.date||''} ${r.sent} ${r.delivered} ${r.sales} ${r.orders} ${r.buyers} ${r.cost} ${r.roas??''} ${r.ctr??''}`.toLowerCase()
       return hay.includes(q)
     })
-  },[automations,typeFilter,search])
+  },[automations,search])
   const {sorted,toggle,dir}=useSort(filtered,'sales')
-  const {std,gk}=useMemo(()=>({
-    std: automations.filter(r=>r.type==='standard'),
-    gk:  automations.filter(r=>r.type==='cart_recovery'),
-  }),[automations])
+  // Unified automation totals (no Standard/Cart-Recovery split). Revenue counts
+  // both standard sales and any recovered cart amount on the same row.
+  const totals=useMemo(()=>{
+    let sales=0,orders=0,buyers=0,cost=0,sent=0,delivered=0
+    for(const r of automations){
+      sales+=(r.sales||0)+(r.recovered_amount||0)
+      orders+=r.orders||0; buyers+=r.buyers||0; cost+=r.cost||0
+      sent+=r.sent||0; delivered+=r.delivered||0
+    }
+    return {sales,orders,buyers,cost,sent,delivered,roas:safe(sales,cost)}
+  },[automations])
   return(
     <div>
       <DefinitionsPanel items={DEFS.automations}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
-        {[['Auto Sales',cur(sumKey(std,'sales'))],['Auto Orders',fmt(sumKey(std,'orders'))],['Auto Buyers',fmt(sumKey(std,'buyers'))],['Auto Cost',cur(sumKey(std,'cost'))],['Carts Recovered',cur(sumKey(gk,'recovered_amount'))],['Carts Won',fmt(sumKey(gk,'recovered_carts'))]].map(([l,v])=><MetricCard key={l} label={l} value={v}/>)}
+        {[['Sales',cur(totals.sales)],['Orders',fmt(totals.orders)],['Buyers',fmt(totals.buyers)],['Cost',cur(totals.cost)],['ROAS',totals.roas>0?totals.roas.toFixed(2)+'x':'—'],['Sent',fmt(totals.sent)]].map(([l,v])=><MetricCard key={l} label={l} value={v}/>)}
       </div>
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{filtered.length}</span> automations</p>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 border border-black/[0.08] rounded-lg px-2.5 h-8 bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-colors">
-            <Search size={13} className="text-gray-400" />
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, channel, date…" className="border-none bg-transparent text-[12px] outline-none w-52 text-gray-700 placeholder:text-gray-400"/>
-          </div>
-          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} className="h-8 text-[12px] px-2 rounded-md border border-black/[0.12] bg-white text-gray-700 focus:outline-none">
-            <option value="ALL">All Types</option><option value="standard">Standard</option><option value="cart_recovery">Cart Recovery (GoKwik)</option>
-          </select>
+        <div className="flex items-center gap-1.5 border border-black/[0.08] rounded-lg px-2.5 h-8 bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-colors">
+          <Search size={13} className="text-gray-400" />
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, channel, date…" className="border-none bg-transparent text-[12px] outline-none w-52 text-gray-700 placeholder:text-gray-400"/>
         </div>
       </div>
       <Panel><div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full" style={{minWidth:'900px'}}>
         <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]"><tr>
           <Th right={false} onClick={()=>toggle('name')} sortDir={dir('name')}>Automation</Th>
-          <Th>Type</Th>
           <Th onClick={()=>toggle('date')} sortDir={dir('date')}>As of</Th>
           <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
           <Th onClick={()=>toggle('delivered')} sortDir={dir('delivered')}>Delivered</Th>
           <Th onClick={()=>toggle('seen')} sortDir={dir('seen')}>Seen</Th>
           <Th onClick={()=>toggle('ctr')} sortDir={dir('ctr')}>CTR</Th>
           <Th onClick={()=>toggle('buyers')} sortDir={dir('buyers')}>Buyers</Th>
-          <Th onClick={()=>toggle('sales')} sortDir={dir('sales')}>Sales / Recovered</Th>
+          <Th onClick={()=>toggle('sales')} sortDir={dir('sales')}>Sales</Th>
           <Th onClick={()=>toggle('cost')} sortDir={dir('cost')}>Cost</Th>
           <Th onClick={()=>toggle('roas')} sortDir={dir('roas')}>ROAS</Th>
         </tr></thead>
-        <tbody>{sorted.map((r,i)=>(
+        <tbody>{sorted.map((r,i)=>{
+          const revenue=(r.sales||0)+(r.recovered_amount||0)
+          return (
           <tr key={i} onClick={()=>{ if(r.name) setActiveName(r.name) }} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
             <Td right={false} className="font-semibold whitespace-nowrap text-blue-700 hover:underline">{r.name}</Td>
-            <Td>{r.type==='cart_recovery'?<Badge variant="amber">Cart Recovery</Badge>:<Badge variant="blue">Standard</Badge>}</Td>
             <Td className="text-gray-500 whitespace-nowrap tabular-nums">{r.date || '—'}</Td>
             <Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
             <Td>{r.seen?fmt(r.seen):'—'}</Td>
             <Td>{r.ctr?r.ctr+'%':'—'}</Td>
             <Td>{r.buyers||'—'}</Td>
-            <Td className={(r.sales||r.recovered_amount)>0?'text-green-700 font-semibold':'text-gray-400'}>
-              {r.type==='cart_recovery'?(r.recovered_amount>0?<span>{cur(r.recovered_amount)}<br/><span className="text-[10px] text-gray-400 font-normal">({r.recovered_carts} carts)</span></span>:'—'):(r.sales>0?cur(r.sales):'—')}
-            </Td>
+            <Td className={revenue>0?'text-green-700 font-semibold':'text-gray-400'}>{revenue>0?cur(revenue):'—'}</Td>
             <Td>{cur(r.cost)}</Td>
             <Td><RoasBadge roas={r.roas}/></Td>
           </tr>
-        ))}</tbody>
+        )})}</tbody>
       </table></div></Panel>
       {activeName && <CreativesDrawer label={activeName} sublabel="Automation" fetchUrl={`/api/automation-creatives?name=${encodeURIComponent(activeName)}`} onClose={()=>setActiveName(null)}/>}
     </div>
@@ -875,8 +882,10 @@ type OfferRow = {
 function OfferTab(){
   const campaigns=useDashStore(s=>s.campaigns)
   const automations=useDashStore(s=>s.automations)
-  const [scope,setScope]=useState<Scope>('campaigns')
-  const dimensionLabel = scope==='campaigns' ? 'Offer Type' : 'Automation Type'
+  const scope=useDashStore(s=>s.scope)
+  const setScope=useDashStore(s=>s.setScope)
+  // Automations have no offer dimension — group them by channel instead.
+  const dimensionLabel = scope==='campaigns' ? 'Offer Type' : 'Channel'
   const countLabel = scope==='campaigns' ? 'campaigns' : 'automations'
 
   const rows=useMemo<OfferRow[]>(()=>{
@@ -890,7 +899,7 @@ function OfferTab(){
     }
     const map=new Map<string,OfferRow>()
     for(const a of automations){
-      const key = a.type==='cart_recovery' ? 'Cart Recovery' : 'Standard'
+      const key = (a.channel || 'unknown')
       let m=map.get(key)
       if(!m){
         m={key,campaign_count:0,sent:0,delivered:0,clicks:0,buyers:0,sales:0,orders:0,cost:0,ctr:0,roas:0,revenue_per_delivered:0,buyer_conversion:0}
@@ -919,7 +928,7 @@ function OfferTab(){
       <ScopeToggle scope={scope} onChange={setScope}/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
-          <PanelTitle>Revenue by {scope==='campaigns'?'offer type':'automation type'}</PanelTitle>
+          <PanelTitle>Revenue by {scope==='campaigns'?'offer type':'channel'}</PanelTitle>
           <ResponsiveContainer width="100%" height={210}>
             <PieChart margin={{top:0,right:0,bottom:0,left:0}}>
               <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={62} label={({percent}:{percent?:number})=>(percent||0)>=0.05?`${((percent||0)*100).toFixed(0)}%`:''} labelLine={false} fontSize={10}>{pieData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Pie>
@@ -971,7 +980,7 @@ function OfferTab(){
   )
 }
 
-type Scope = 'campaigns' | 'automations'
+type Scope = DataScope
 function ScopeToggle({scope,onChange}:{scope:Scope,onChange:(s:Scope)=>void}){
   return (
     <div className="inline-flex rounded-lg border border-black/[0.08] bg-white p-0.5 mb-4">
@@ -993,7 +1002,8 @@ function ScopeToggle({scope,onChange}:{scope:Scope,onChange:(s:Scope)=>void}){
 function FunnelTab(){
   const campaigns=useDashStore(s=>s.campaigns)
   const automations=useDashStore(s=>s.automations)
-  const [scope,setScope]=useState<Scope>('campaigns')
+  const scope=useDashStore(s=>s.scope)
+  const setScope=useDashStore(s=>s.setScope)
   const rows = scope==='campaigns' ? campaigns : automations
   const f=useMemo(()=>computeFunnel(rows),[rows])
   const topDR=useMemo(()=>[...rows].sort((a,b)=>deliveryRate(b)-deliveryRate(a)).slice(0,5),[rows])
@@ -1033,7 +1043,8 @@ function FunnelTab(){
 function RevenueTab(){
   const campaigns=useDashStore(s=>s.campaigns)
   const automations=useDashStore(s=>s.automations)
-  const [scope,setScope]=useState<Scope>('campaigns')
+  const scope=useDashStore(s=>s.scope)
+  const setScope=useDashStore(s=>s.setScope)
   const rows = scope==='campaigns' ? campaigns : automations
   const labelFor = (r: typeof rows[number]) => 'segment' in r ? (r as Campaign).segment : (r as Automation).name
   const {ts,td,tsal,tb,to,tcost,tc,top10}=useMemo(()=>{
@@ -1165,6 +1176,7 @@ export default function DashboardPage(){
   const [syncError,setSyncError]=useState<string|null>(null)
   const {campaigns,automations,fetchCampaigns,fetchAutomations,loading,error}=useDashStore()
   const filters=useDashStore(s=>s.filters)
+  const scope=useDashStore(s=>s.scope)
 
   useEffect(()=>{fetchCampaigns();fetchAutomations()},[filters,fetchCampaigns,fetchAutomations])
 
@@ -1173,7 +1185,9 @@ export default function DashboardPage(){
   const offers=useMemo(()=>[...new Set(campaigns.map(r=>r.offer))].sort(),[campaigns])
   const campaignDates=useMemo(()=>[...new Set(campaigns.map(r=>r.date).filter(Boolean))],[campaigns])
   const automationDates=useMemo(()=>[...new Set(automations.map(r=>r.date).filter((d): d is string => !!d))],[automations])
-  const dates = tab==='automations' ? automationDates : campaignDates
+  const SCOPE_AWARE=new Set(['overview','offer','funnel','revenue'])
+  const viewingAutomations = tab==='automations' || (SCOPE_AWARE.has(tab) && scope==='automations')
+  const dates = viewingAutomations ? automationDates : campaignDates
 
   const handleSync=async()=>{
     setSyncing(true)

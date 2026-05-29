@@ -21,7 +21,7 @@ export default function UploadModal({ onClose }: UploadModalProps) {
   const isAutoCreatives = type === 'automation_creatives'
   const isCampCreatives = type === 'campaign_creatives'
   const isCreatives = isAutoCreatives || isCampCreatives
-  const needsDate = type === 'automations' || type === 'gokwik_carts'
+  const needsDate = type === 'automations'
   const hasRange = Boolean(snapshotDateFrom || snapshotDateTo)
   const dateValid = !needsDate || (
     /^\d{4}-\d{2}-\d{2}$/.test(snapshotDate) ||
@@ -35,8 +35,7 @@ export default function UploadModal({ onClose }: UploadModalProps) {
     const isXl = n.endsWith('.xlsx') || n.endsWith('.xls')
     if (isXl && n.includes('campaign')) setType('campaign_creatives')
     else if (isXl || n.includes('creative')) setType('automation_creatives')
-    else if (n.includes('gokwik') || n.includes('carts')) setType('gokwik_carts')
-    else if (n.includes('auto'))                      setType('automations')
+    else if (n.includes('auto') || n.includes('gokwik') || n.includes('carts')) setType('automations')
     else                                              setType('campaigns')
   }
 
@@ -99,8 +98,8 @@ export default function UploadModal({ onClose }: UploadModalProps) {
         {/* Export type picker */}
         <div className="mb-4">
           <label className="text-[12px] font-medium text-gray-600 mb-1.5 block">Export type</label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {(['campaigns','automations','gokwik_carts','automation_creatives','campaign_creatives'] as ExportType[]).map(t => (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {(['campaigns','automations','automation_creatives','campaign_creatives'] as ExportType[]).map(t => (
               <button
                 key={t}
                 onClick={() => setType(t)}
@@ -112,7 +111,6 @@ export default function UploadModal({ onClose }: UploadModalProps) {
               >
                 {t === 'campaigns' ? 'Campaigns'
                   : t === 'automations' ? 'Automations'
-                  : t === 'gokwik_carts' ? 'GoKwik Carts'
                   : t === 'automation_creatives' ? 'Auto Creatives'
                   : 'Camp Creatives'}
               </button>

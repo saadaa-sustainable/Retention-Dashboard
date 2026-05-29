@@ -175,9 +175,9 @@ export interface UploadResult {
 
 export interface GlobalFilters {
   date: string        // 'ALL' or YYYY-MM-DD
-  campaign_id: string // 'ALL' or e.g. 'C130'
-  segment: string     // 'ALL' or segment name
-  offer: string       // 'ALL' or offer code
+  campaign_id: string // 'ALL' or e.g. 'C130'        (campaigns only)
+  segment: string     // 'ALL' or segment name        (campaigns only)
+  offer: string       // 'ALL' or offer code          (campaigns only)
   channel: string     // 'ALL' | 'whatsapp' | 'sms' | 'email'
   date_from: string   // YYYY-MM-DD or ''
   date_to: string     // YYYY-MM-DD or ''

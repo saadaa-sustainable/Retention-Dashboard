@@ -6,7 +6,7 @@ import { X, ChevronDown } from 'lucide-react'
 const PAGE_TITLES: Record<string, { title: string; sub: string }> = {
   overview:    { title: 'Overview',             sub: 'All campaigns · Included segments only' },
   campaigns:   { title: 'Campaigns',            sub: 'Detailed campaign performance table' },
-  automations: { title: 'Automations',          sub: 'Standard automations + GoKwik cart recovery' },
+  automations: { title: 'Automations',          sub: 'Automation performance' },
   segment:     { title: 'Segment Analytics',    sub: 'Performance grouped by included segment' },
   offer:       { title: 'Offer Analytics',      sub: 'Revenue and conversion by offer type' },
   funnel:      { title: 'Funnel Analysis',      sub: 'Sent → Delivered → Seen → Clicks → Buyers' },
@@ -22,14 +22,20 @@ interface TopBarProps {
   dates: string[]
 }
 
+// Tabs whose data source follows the global Campaigns/Automations scope toggle.
+const SCOPE_AWARE_TABS = new Set(['overview', 'offer', 'funnel', 'revenue'])
+
 export default function TopBar({ tab, campaignIds, segments, offers, dates }: TopBarProps) {
-  const { filters, setFilter, clearFilters } = useDashStore()
+  const { filters, setFilter, clearFilters, scope } = useDashStore()
   const meta    = PAGE_TITLES[tab] || PAGE_TITLES.overview
   const hasFilter = Object.values(filters).some(v => v !== 'ALL' && v !== '')
   const sortedDates = useMemo(() => [...dates].sort().reverse(), [dates])
 
   const rangeActive = filters.date_from !== '' || filters.date_to !== ''
-  const isAutomations = tab === 'automations'
+  // Campaign-only filters hide when we're effectively viewing automations:
+  // either on the Automations tab, or a scope-aware tab with scope=automations.
+  const viewingAutomations = tab === 'automations' || (SCOPE_AWARE_TABS.has(tab) && scope === 'automations')
+  const isAutomations = viewingAutomations
   const sel = (label: string, key: keyof typeof filters, options: string[], display?: (v:string)=>string) => {
     const active = filters[key] !== 'ALL' && filters[key] !== ''
     return (
@@ -87,9 +93,13 @@ export default function TopBar({ tab, campaignIds, segments, offers, dates }: To
         {sel('All Dates',       'date',        sortedDates, d => d.slice(5))}
         {dateRangeInputs}
         {sel('All Channels',    'channel',     ['whatsapp','sms','email'])}
-        {!isAutomations && sel('All Campaign IDs','campaign_id', campaignIds)}
-        {!isAutomations && sel('All Segments',    'segment',     segments, s => s.length > 30 ? s.slice(0,30)+'…' : s)}
-        {!isAutomations && sel('All Offers',      'offer',       offers)}
+        {!isAutomations && (
+          <>
+            {sel('All Campaign IDs','campaign_id', campaignIds)}
+            {sel('All Segments',    'segment',     segments, s => s.length > 30 ? s.slice(0,30)+'…' : s)}
+            {sel('All Offers',      'offer',       offers)}
+          </>
+        )}
         {hasFilter && (
           <button
             onClick={clearFilters}

@@ -2,6 +2,8 @@
 import { create } from 'zustand'
 import type { Campaign, Automation, GlobalFilters } from '@/types'
 
+export type DataScope = 'campaigns' | 'automations'
+
 interface DashStore {
   // Data
   campaigns:   Campaign[]
@@ -11,6 +13,8 @@ interface DashStore {
 
   // Filters
   filters: GlobalFilters
+  // Campaigns vs Automations view mode for the scope-aware analytics tabs.
+  scope: DataScope
 
   // Actions
   setCampaigns:   (c: Campaign[]) => void
@@ -18,6 +22,7 @@ interface DashStore {
   setLoading:     (v: boolean) => void
   setError:       (e: string | null) => void
   setFilter:      (key: keyof GlobalFilters, value: string) => void
+  setScope:       (s: DataScope) => void
   clearFilters:   () => void
   fetchCampaigns: () => Promise<void>
   fetchAutomations: () => Promise<void>
@@ -39,11 +44,13 @@ export const useDashStore = create<DashStore>((set, get) => ({
   loading:     false,
   error:       null,
   filters:     DEFAULT_FILTERS,
+  scope:       'campaigns',
 
   setCampaigns:   (campaigns)   => set({ campaigns }),
   setAutomations: (automations) => set({ automations }),
   setLoading:     (loading)     => set({ loading }),
   setError:       (error)       => set({ error }),
+  setScope:       (scope)       => set({ scope }),
 
   setFilter: (key, value) =>
     set(s => {
