@@ -1,10 +1,152 @@
 'use client'
 import { useState, useRef } from 'react'
-import { X, Upload, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { X, Upload, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronRight, FileText } from 'lucide-react'
 import type { ExportType, UploadResult } from '@/types'
 import { useDashStore } from '@/lib/store'
 
 interface UploadModalProps { onClose: () => void }
+
+// Format spec shown in the "Expected format" panel below the type picker so
+// uploaders know exactly which columns the parser looks for and how the file
+// should be structured before they drop a file.
+interface FormatSpec {
+  ext: '.csv' | '.xlsx / .xls'
+  required: string[]
+  optional?: string[]
+  example: string[][]    // header row + sample data row(s)
+  notes?: string[]
+}
+
+const FORMAT_SPECS: Record<ExportType, FormatSpec> = {
+  campaigns: {
+    ext: '.csv',
+    required: ['Name','Channel','Sent','Delivered','Seen','CTR','Clicks','Buyers','Unsubscribers','Sales','Orders','Source','Date','Cost','ROAS'],
+    example: [
+      ['Name','Channel','Sent','Delivered','Date','Sales','Source'],
+      ['C130_RET_4000<LTV_LOD_Within_540D_USP_IMG_OF-RS_LD','whatsapp','1024','856','2026-05-18','42130','segment - Included Segment\\n4000<LTV_LOD_Within_540D'],
+    ],
+    notes: [
+      'Date format: YYYY-MM-DD (preferred) or DD-MM-YYYY.',
+      'Source column can contain multi-line text; the segment is parsed from the line after "Included Segment".',
+      'campaign_id, segment, offer, format are auto-parsed from Name.',
+    ],
+  },
+  automations: {
+    ext: '.csv',
+    required: ['Name','Channel','Sent','Delivered','Seen','CTR','Clicks','Buyers','Sales','Orders','Cost','ROAS'],
+    optional: ['Date (per-row)','Unsubscribers','Templates Used'],
+    example: [
+      ['Date','Name','Channel','Sent','Delivered','Seen','CTR','Clicks','Buyers','Sales','Orders','Cost'],
+      ['18-05-2026','Abandoned Cart','whatsapp','779','558','0','1.97%','11','4','4281.25','4','267.38'],
+    ],
+    notes: [
+      'Either include a Date column per row, OR pick a single snapshot date / date range in the field above.',
+      'Multiple rows with the same (Name, Date) are kept if their metrics differ; only byte-identical duplicates are skipped.',
+    ],
+  },
+  automation_creatives: {
+    ext: '.xlsx / .xls',
+    required: ['Automation Name','Template Name','Template Copy','Creative Media Link'],
+    example: [
+      ['Automation Name','Template Name','Template Copy','Creative Media Link'],
+      ['Homepage_Page_New_User_KwikPass','rs_mar_off_hp_t1','Hi {{1}}, here is 15% off…','https://drive.google.com/file/d/1abc…/view'],
+      ['','sn_mar_off_hp_v1_t2','Hi {{1}}, exclusive welcome offer…','https://drive.google.com/file/d/1xyz…/view'],
+    ],
+    notes: [
+      'Automation Name in row 2+ may be blank — it forward-fills from the most recent non-blank value (like merged cells).',
+      'Creative Media Link can be a Drive file URL or a Drive folder URL.',
+      'Automation Name must match the Name column of an uploaded automation CSV (case-insensitive) for the drawer to find it.',
+    ],
+  },
+  campaign_creatives: {
+    ext: '.xlsx / .xls',
+    required: ['Campaign ID','Channel','Template Name','Template Copy','Creative Media Link'],
+    example: [
+      ['Campaign ID','Channel','Template Name','Template Copy','Creative Media Link'],
+      ['C123','WhatsApp','confirmation_order_v22','Hi {{1}}, your order is confirmed…','https://drive.google.com/drive/folders/17EJg…'],
+      ['','WhatsApp','order_confirm_ship_v1','Hi {{1}}, your order is on its way…','https://drive.google.com/drive/folders/17EJg…'],
+    ],
+    notes: [
+      'Campaign ID & Channel in row 2+ may be blank — they forward-fill from the most recent non-blank value.',
+      'Campaign ID must match the campaign_id parsed from a campaign Name (e.g. C123).',
+    ],
+  },
+  // Legacy — UI no longer exposes this option, but the backend route still accepts it.
+  gokwik_carts: {
+    ext: '.csv',
+    required: ['Name','Channel','Sent','Delivered','Recovered Amount','Recovered Carts','Cost'],
+    example: [['Name','Channel','Sent','Delivered','Recovered Amount','Recovered Carts'],['Cart Recovery','whatsapp','450','312','85420','22']],
+    notes: ['Deprecated — upload as Automations instead.'],
+  },
+}
+
+function FormatPanel({ type }: { type: ExportType }) {
+  const [open, setOpen] = useState(false)
+  const spec = FORMAT_SPECS[type]
+  if (!spec) return null
+  return (
+    <div className="mb-4 border border-black/[0.08] rounded-lg overflow-hidden bg-gray-50/50">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-gray-700 hover:bg-gray-100/60 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <FileText size={13} className="text-gray-400" />
+          <span className="font-medium">Expected format</span>
+          <span className="text-gray-400 font-mono text-[11px]">{spec.ext}</span>
+        </span>
+        {open ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2.5">
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium mb-1">Required columns</p>
+            <div className="flex flex-wrap gap-1">
+              {spec.required.map(c => (
+                <code key={c} className="text-[10.5px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">{c}</code>
+              ))}
+            </div>
+          </div>
+          {spec.optional && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium mb-1">Optional columns</p>
+              <div className="flex flex-wrap gap-1">
+                {spec.optional.map(c => (
+                  <code key={c} className="text-[10.5px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">{c}</code>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium mb-1">Example</p>
+            <div className="overflow-x-auto rounded border border-black/[0.08] bg-white">
+              <table className="w-full text-[10.5px] font-mono">
+                <thead className="bg-gray-50">
+                  <tr>{spec.example[0].map(h => <th key={h} className="px-2 py-1 text-left text-gray-600 font-medium whitespace-nowrap border-b border-black/[0.06]">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {spec.example.slice(1).map((row, i) => (
+                    <tr key={i} className={i % 2 ? 'bg-gray-50/40' : ''}>
+                      {row.map((cell, j) => (
+                        <td key={j} className="px-2 py-1 text-gray-700 whitespace-nowrap max-w-[180px] truncate" title={cell}>{cell || <span className="text-gray-300">(blank)</span>}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {spec.notes && (
+            <ul className="text-[11px] text-gray-500 list-disc pl-4 space-y-0.5">
+              {spec.notes.map((n, i) => <li key={i}>{n}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function UploadModal({ onClose }: UploadModalProps) {
   const [file, setFile]       = useState<File | null>(null)
@@ -118,7 +260,10 @@ export default function UploadModal({ onClose }: UploadModalProps) {
           </div>
         </div>
 
-        {/* Snapshot date/range — only for automations & gokwik (campaigns derive date per-row from the CSV) */}
+        {/* Format guide — collapsible reference for the chosen export type. */}
+        {(status === 'idle' || status === 'error') && <FormatPanel type={type} />}
+
+        {/* Snapshot date/range — only for automations (campaigns derive date per-row from the CSV) */}
         {needsDate && (status === 'idle' || status === 'error') && (
           <div className="mb-4">
             <label className="text-[12px] font-medium text-gray-600 mb-1.5 block">
