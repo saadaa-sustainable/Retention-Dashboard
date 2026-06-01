@@ -74,6 +74,18 @@ function groupKey(id:string):string{
   return 'Others'
 }
 
+// Audience type derived from segment/name. Campaigns targeting "Non-Purchasers"
+// have an "_NP_" or "_NP-" token in their segment or name (e.g.
+// "KP=1_NP_Within_5D", "ATC>0_NP-L90D_notwinthin_60D"). Everything else is
+// treated as targeting an existing-customer (Purchaser) audience.
+type Audience = 'Non-Purchaser' | 'Purchaser'
+const NP_TOKEN_RE = /(?:^|[_-])NP(?=[_-]|$)/i
+function audienceOf(segment:string, name?:string): Audience {
+  if (segment && NP_TOKEN_RE.test(segment)) return 'Non-Purchaser'
+  if (name    && NP_TOKEN_RE.test(name))    return 'Non-Purchaser'
+  return 'Purchaser'
+}
+
 function categorize(segment:string, name?:string):SegmentCategory{
   const s=(segment||'').trim().toUpperCase()
   // 1) Cleanest signal: the segment field itself starts with a known token (case-insensitive)
@@ -427,13 +439,24 @@ function CampaignCategoriesView({campaignId,onBack,onOpenCategory}:{campaignId:s
 function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{campaignId:string,category:SegmentCategory,onBack:()=>void,onBackToCampaigns:()=>void}){
   const campaigns=useDashStore(s=>s.campaigns)
   const [search,setSearch]=useState('')
+  const [audience,setAudience]=useState<'ALL'|Audience>('ALL')
   const [page,setPage]=useState(0)
   const [perPage,setPerPage]=useState(10)
   const [activeCampaignId,setActiveCampaignId]=useState<string|null>(null)
 
   const scoped=useMemo(()=>campaigns.filter(c=>groupKey(c.campaign_id)===campaignId && categorize(c.segment,c.name)===category),[campaigns,campaignId,category])
-  const filtered=useMemo(()=>scoped.filter(r=>!search||r.name.toLowerCase().includes(search)||r.segment.toLowerCase().includes(search)),[scoped,search])
+  const filtered=useMemo(()=>scoped.filter(r=>{
+    if (audience!=='ALL' && audienceOf(r.segment,r.name)!==audience) return false
+    if (!search) return true
+    return r.name.toLowerCase().includes(search) || r.segment.toLowerCase().includes(search)
+  }),[scoped,search,audience])
   const {sorted,toggle,dir}=useSort(filtered,'date')
+
+  const audienceCounts=useMemo(()=>{
+    let np=0, pu=0
+    for (const r of scoped) (audienceOf(r.segment,r.name)==='Non-Purchaser' ? np++ : pu++)
+    return {np, pu}
+  },[scoped])
 
   const pages=Math.max(1,Math.ceil(sorted.length/perPage))
   useEffect(()=>{ if(page>pages-1) setPage(pages-1) },[pages,page])
@@ -488,8 +511,25 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
       </div>
 
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{filtered.length}</span> row{filtered.length===1?'':'s'}</p>
-        <div className="flex items-center gap-2">
+        <p className="text-[12px] text-gray-500">
+          <span className="font-semibold text-gray-800 tabular-nums">{filtered.length}</span> row{filtered.length===1?'':'s'}
+          {' · '}
+          <span className="text-gray-400 tabular-nums">{audienceCounts.np} non-purchaser · {audienceCounts.pu} purchaser</span>
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex rounded-lg border border-black/[0.08] bg-white p-0.5">
+            {(['ALL','Non-Purchaser','Purchaser'] as const).map(a=>(
+              <button
+                key={a}
+                onClick={()=>{setAudience(a);setPage(0)}}
+                className={`px-2.5 h-7 text-[11px] rounded-md transition-colors ${
+                  audience===a
+                    ? 'bg-blue-50 text-blue-700 font-semibold'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >{a==='ALL'?'All audiences':a}</button>
+            ))}
+          </div>
           <select value={perPage} onChange={e=>{setPerPage(+e.target.value);setPage(0)}} className="h-8 text-[12px] px-2.5 rounded-lg border border-black/[0.08] bg-white text-gray-700 cursor-pointer hover:border-gray-300 focus:outline-none focus:border-blue-400">{[10,25,50,100].map(n=><option key={n} value={n}>{n} per page</option>)}</select>
           <div className="flex items-center gap-1.5 border border-black/[0.08] rounded-lg px-2.5 h-8 bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-colors">
             <Search size={13} className="text-gray-400" />
@@ -502,6 +542,7 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
         <div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full" style={{minWidth:'900px'}}>
           <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]"><tr>
             <Th right={false} onClick={()=>toggle('segment')} sortDir={dir('segment')}>Segment</Th>
+            <Th>Audience</Th>
             <Th onClick={()=>toggle('date')} sortDir={dir('date')}>Date</Th>
             <Th onClick={()=>toggle('sent')} sortDir={dir('sent')}>Sent</Th>
             <Th onClick={()=>toggle('delivered')} sortDir={dir('delivered')}>Delivered</Th>
@@ -513,9 +554,13 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
             <Th onClick={()=>toggle('cost')} sortDir={dir('cost')}>Cost</Th>
             <Th onClick={()=>toggle('roas')} sortDir={dir('roas')}>ROAS</Th>
           </tr></thead>
-          <tbody>{paged.map((r,i)=>(
+          <tbody>{paged.map((r,i)=>{
+            const aud = audienceOf(r.segment, r.name)
+            const isNP = aud === 'Non-Purchaser'
+            return (
             <tr key={i} onClick={()=>{ if(r.campaign_id) setActiveCampaignId(r.campaign_id) }} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
               <Td right={false}><p className="text-[12px] truncate max-w-[220px] text-blue-700 hover:underline" title={r.segment}>{r.segment||'—'}</p><p className="text-[10px] text-gray-400 truncate max-w-[220px]" title={r.name}>{r.campaign_id} · {r.offer} · {r.format}</p></Td>
+              <Td><span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${isNP?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700'}`}>{isNP?'Non-Purchaser':'Purchaser'}</span></Td>
               <Td className="text-gray-500 whitespace-nowrap">{r.date?.slice(5)}</Td>
               <Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
               <Td><DrBadge dr={deliveryRate(r)}/></Td>
@@ -526,9 +571,9 @@ function CategoryDetailView({campaignId,category,onBack,onBackToCampaigns}:{camp
               <Td>{r.orders||'—'}</Td>
               <Td>{cur(r.cost)}</Td>
               <Td><RoasBadge roas={r.roas}/></Td>
-            </tr>
-          ))}
-          {paged.length===0 && <tr><td colSpan={12} className="text-center py-10 text-[12px] text-gray-400">No rows match your filters.</td></tr>}
+            </tr>)
+          })}
+          {paged.length===0 && <tr><td colSpan={13} className="text-center py-10 text-[12px] text-gray-400">No rows match your filters.</td></tr>}
           </tbody>
         </table></div>
         <div className="flex items-center justify-between px-4 py-3 border-t border-black/[0.06] text-[11px] text-gray-500 flex-wrap gap-2 bg-gray-50/40">
