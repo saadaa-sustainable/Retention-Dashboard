@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef } from 'react'
-import { X, Upload, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronRight, FileText } from 'lucide-react'
+import { X, Upload, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronRight, FileText, Download } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import type { ExportType, UploadResult } from '@/types'
 import { useDashStore } from '@/lib/store'
 
@@ -80,24 +81,83 @@ const FORMAT_SPECS: Record<ExportType, FormatSpec> = {
   },
 }
 
+// Build a CSV blob (RFC 4180 quoting) from a 2-D array.
+function csvEscape(v: string): string {
+  if (/[",\r\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`
+  return v
+}
+function aoaToCsvBlob(aoa: string[][]): Blob {
+  const lines = aoa.map(row => row.map(csvEscape).join(','))
+  return new Blob([lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' })
+}
+function aoaToXlsxBlob(aoa: string[][]): Blob {
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Template')
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+  return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+}
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+// Template download — gives the user a real file with the header row + a sample
+// data row so they can fill in their own data without guessing column names.
+function downloadTemplate(type: ExportType, spec: FormatSpec) {
+  // For the actual template we want ALL required columns as headers + the
+  // example sample row(s). We extend the example's first row to include any
+  // required columns the example didn't list, so the user gets the full
+  // header surface area.
+  const headerSet = new Set<string>([...spec.example[0], ...spec.required])
+  const headers = [...headerSet]
+  const headerIdx = (col: string) => spec.example[0].indexOf(col)
+  const sampleRows = spec.example.slice(1).map(row => {
+    return headers.map(h => {
+      const idx = headerIdx(h)
+      return idx >= 0 ? (row[idx] ?? '') : ''
+    })
+  })
+  const aoa = [headers, ...sampleRows]
+
+  const isXlsx = spec.ext.includes('xlsx')
+  const filename = `template_${type}.${isXlsx ? 'xlsx' : 'csv'}`
+  const blob = isXlsx ? aoaToXlsxBlob(aoa) : aoaToCsvBlob(aoa)
+  triggerDownload(blob, filename)
+}
+
 function FormatPanel({ type }: { type: ExportType }) {
   const [open, setOpen] = useState(false)
   const spec = FORMAT_SPECS[type]
   if (!spec) return null
   return (
     <div className="mb-4 border border-black/[0.08] rounded-lg overflow-hidden bg-gray-50/50">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-gray-700 hover:bg-gray-100/60 transition-colors"
-      >
-        <span className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-gray-100/60 transition-colors">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="flex-1 flex items-center gap-2 text-[12px] text-gray-700 text-left"
+        >
+          {open ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />}
           <FileText size={13} className="text-gray-400" />
           <span className="font-medium">Expected format</span>
           <span className="text-gray-400 font-mono text-[11px]">{spec.ext}</span>
-        </span>
-        {open ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />}
-      </button>
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); downloadTemplate(type, spec) }}
+          title="Download a sample file with the right column headers"
+          className="flex items-center gap-1 text-[11px] px-2 h-7 rounded-md border border-black/[0.1] bg-white text-gray-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors"
+        >
+          <Download size={12} /> Template
+        </button>
+      </div>
       {open && (
         <div className="px-3 pb-3 space-y-2.5">
           <div>
