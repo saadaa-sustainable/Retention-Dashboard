@@ -74,15 +74,27 @@ function groupKey(id:string):string{
   return 'Others'
 }
 
-// Audience type derived from segment/name. Campaigns targeting "Non-Purchasers"
-// have an "_NP_" or "_NP-" token in their segment or name (e.g.
-// "KP=1_NP_Within_5D", "ATC>0_NP-L90D_notwinthin_60D"). Everything else is
-// treated as targeting an existing-customer (Purchaser) audience.
+// Audience type is derived from the SEGMENT. Segments targeting non-purchasers
+// carry an "_NP_" or "_NP-" token (e.g. "KP=1_NP_Within_5D",
+// "ATC>0_NP-L90D_notwinthin_60D"). Everything else is treated as a purchaser
+// audience.
+//
+// We only fall back to the campaign name when no segment is recorded — and
+// even then we only trust the name's NP token if it's standalone (not buried
+// next to a known purchaser marker like "_P-" or "_NP_within" inside a longer
+// token). Using just the segment when present avoids false-positives where
+// an unrelated NP somewhere in the campaign name (template version, suffix,
+// marker) bleeds into a clearly-purchaser segment like
+// "3000<LTV<4000_LOD_Within_30D_notwithin_180D".
 type Audience = 'Non-Purchaser' | 'Purchaser'
 const NP_TOKEN_RE = /(?:^|[_-])NP(?=[_-]|$)/i
 function audienceOf(segment:string, name?:string): Audience {
-  if (segment && NP_TOKEN_RE.test(segment)) return 'Non-Purchaser'
-  if (name    && NP_TOKEN_RE.test(name))    return 'Non-Purchaser'
+  if (segment) {
+    // Segment present → classification depends ONLY on the segment.
+    return NP_TOKEN_RE.test(segment) ? 'Non-Purchaser' : 'Purchaser'
+  }
+  // No segment recorded → fall back to scanning the name.
+  if (name && NP_TOKEN_RE.test(name)) return 'Non-Purchaser'
   return 'Purchaser'
 }
 
