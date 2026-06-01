@@ -86,24 +86,50 @@ const NON_OFFER_CODES = new Set([
   'PER', 'VAL', 'FRE',
   'IMG', 'TXT', 'VID', 'DOC', 'ICAR',
   'T1', 'T2', 'T3', 'T4', 'T5', 'T6',
+  // Suffix / marker tokens that have appeared in real campaign names but
+  // aren't offers (campaign tags, content markers, broadcast indicators).
+  'NCL', 'CFY', 'LD', 'LFA', 'NPL', 'KWC', 'GE', 'NU', 'BC', 'VDS', 'CTG', 'MAR', 'TOTE',
+  // Bare prefix tokens that can appear without an actual offer code following.
+  'OFF', 'OF',
 ])
 
+// V2 offer-type codes (PER/VAL/FRE) optionally followed by an amount, e.g.
+// "VAL-400", "PER-15", "FRE-X". These describe the offer TYPE, not the offer
+// itself, so they shouldn't be reported as the V1 offer code.
+function isV2OfferType(code: string): boolean {
+  return /^(?:VAL|PER|FRE)(?:-|$)/i.test(code)
+}
+
 function extractOfferCode(name: string): string {
-  // Pre-Launch: V1 code is documented as literal "OF-PL". Match `OF[-_]PL`
-  // (optionally wrapped by an OFF prefix) before the generic case so the
-  // captured offer is "OF-PL" rather than just "PL".
+  // 1) Pre-Launch (OF-PL) — the documented V1 code literally contains "OF-",
+  // so match it before any generic prefix-stripping logic.
   if (/(?:^|[_-])(?:OFF[_-])?OF[-_]PL(?:[_-]|$)/i.test(name)) return 'OF-PL'
 
-  // Generic case: any token following an OFF/OF prefix delimited by _ or -.
-  // The offer code is the part after the prefix, up to the next _ or end.
-  // Iterate ALL matches and skip blacklisted captures (e.g. OFF_T1 → T1 is
-  // a template version, not an offer; OFF_IMG → IMG is a format code).
-  const re = /(?:^|[_-])(?:OFF|OF)[-_]([A-Z][A-Z0-9]*)(?=[_-]|$)/gi
+  // 2) FORMAT_<offer> pattern. Handles BOTH naming conventions seen in the
+  //    wild:
+  //      - legacy: ..._USP_IMG_OF-RAHOSAADAA_LD  (offer follows format with
+  //        an OFF/OF prefix)
+  //      - new:    ..._IMG_SUMMER300_CFY         (offer follows format
+  //        directly, no prefix)
+  //    Greedy capture allows dashes inside the offer code (e.g. OF-B2G10),
+  //    stopping only at the next underscore. Blacklisted captures are
+  //    skipped via iteration so a real offer further along still matches.
+  const formatRe = /(?:^|[_-])(?:IMG|TXT|VID|DOC|ICAR)[_-](?:(?:OFF|OF)[_-])?([A-Za-z][A-Za-z0-9-]*)(?=_|$)/gi
   let m: RegExpExecArray | null
-  while ((m = re.exec(name)) !== null) {
+  while ((m = formatRe.exec(name)) !== null) {
     const code = m[1].toUpperCase()
-    if (!NON_OFFER_CODES.has(code)) return code
+    if (!NON_OFFER_CODES.has(code) && !isV2OfferType(code)) return code
   }
+
+  // 3) Legacy fallback — OFF/OF prefix anywhere in the name, for cases where
+  //    the offer isn't positioned right after a format token (or the name
+  //    doesn't include a format token at all).
+  const legacyRe = /(?:^|[_-])(?:OFF|OF)[-_]([A-Za-z][A-Za-z0-9-]*)(?=[_-]|$)/gi
+  while ((m = legacyRe.exec(name)) !== null) {
+    const code = m[1].toUpperCase()
+    if (!NON_OFFER_CODES.has(code) && !isV2OfferType(code)) return code
+  }
+
   return ''
 }
 
@@ -220,9 +246,19 @@ export function parseAutomationsCSV(raw: string, snapshotDate: string | null = n
     const name = String(valueFrom(row, ['Name', 'name', 'Automation Name', 'automation_name']) || '').trim()
     const perRowDate = extractDateFromRow(row, snapshotDate)
 
+    // Automation files come in two shapes:
+    //   A) Standard automations: have Sales + Orders columns.
+    //   B) Cart-recovery automations (GoKwik etc.): have Recovered Amount +
+    //      Recovered Carts columns *instead of* Sales/Orders.
+    // We read both sets and set the type based on which is populated. The
+    // dashboard unifies revenue as `sales + recovered_amount`, so neither
+    // shape loses data.
+    const recoveredAmount = toNum(valueFrom(row, ['Recovered Amount', 'recovered_amount', 'Recovered_Amount']))
+    const recoveredCarts  = toNum(valueFrom(row, ['Recovered Carts',  'recovered_carts',  'Recovered_Carts']))
+
     return {
       name,
-      type: 'standard' as const,
+      type: (recoveredAmount > 0 || recoveredCarts > 0) ? 'cart_recovery' as const : 'standard' as const,
       channel:          String(valueFrom(row, ['Channel', 'channel']) || 'whatsapp').toLowerCase() as Automation['channel'],
       date:             perRowDate,
       sent:             toNum(valueFrom(row, ['Sent', 'sent'])),
@@ -236,8 +272,8 @@ export function parseAutomationsCSV(raw: string, snapshotDate: string | null = n
       orders:           toNum(valueFrom(row, ['Orders', 'orders'])),
       cost:             toNum(valueFrom(row, ['Cost', 'cost', 'Cost INR', 'cost_inr'])),
       roas:             toNullNum(valueFrom(row, ['ROAS', 'roas'])),
-      recovered_amount: 0,
-      recovered_carts:  0,
+      recovered_amount: recoveredAmount,
+      recovered_carts:  recoveredCarts,
     }
   }).filter(r => r.name)
 }

@@ -560,7 +560,7 @@ function CategoryDetailView({campaignId,category,audienceScope,onBack,onBackToCa
           </tr></thead>
           <tbody>{paged.map((r,i)=>(
             <tr key={i} onClick={()=>{ if(r.campaign_id) setActiveCampaignId(r.campaign_id) }} className="hover:bg-blue-50/40 transition-colors cursor-pointer">
-              <Td right={false}><p className="text-[12px] truncate max-w-[220px] text-blue-700 hover:underline" title={r.segment}>{r.segment||'—'}</p><p className="text-[10px] text-gray-400 truncate max-w-[220px]" title={r.name}>{r.campaign_id} · {r.offer} · {r.format}</p></Td>
+              <Td right={false}><p className="text-[12px] truncate max-w-[220px] text-blue-700 hover:underline" title={r.segment}>{r.segment||'—'}</p><p className="text-[10px] text-gray-400 truncate max-w-[220px]" title={r.name}>{[r.campaign_id, r.offer, r.format].filter(Boolean).join(' · ')}</p></Td>
               <Td className="text-gray-500 whitespace-nowrap">{r.date?.slice(5)}</Td>
               <Td>{fmt(r.sent)}</Td><Td>{fmt(r.delivered)}</Td>
               <Td><DrBadge dr={deliveryRate(r)}/></Td>
@@ -1225,9 +1225,10 @@ export default function DashboardPage(){
 
   useEffect(()=>{fetchCampaigns();fetchAutomations()},[filters,fetchCampaigns,fetchAutomations])
 
-  const campaignIds=useMemo(()=>[...new Set(campaigns.map(r=>r.campaign_id))].sort(),[campaigns])
-  const segments=useMemo(()=>[...new Set(campaigns.map(r=>r.segment))].sort(),[campaigns])
-  const offers=useMemo(()=>[...new Set(campaigns.map(r=>r.offer))].sort(),[campaigns])
+  const campaignIds=useMemo(()=>[...new Set(campaigns.map(r=>r.campaign_id).filter(Boolean))].sort(),[campaigns])
+  const segments=useMemo(()=>[...new Set(campaigns.map(r=>r.segment).filter(Boolean))].sort(),[campaigns])
+  // Strip blanks — many campaigns don't have an offer; we don't want a "blank" option in the dropdown.
+  const offers=useMemo(()=>[...new Set(campaigns.map(r=>r.offer).filter(Boolean))].sort(),[campaigns])
   const campaignDates=useMemo(()=>[...new Set(campaigns.map(r=>r.date).filter(Boolean))],[campaigns])
   const automationDates=useMemo(()=>[...new Set(automations.map(r=>r.date).filter((d): d is string => !!d))],[automations])
   const SCOPE_AWARE=new Set(['overview','offer','funnel','revenue'])
