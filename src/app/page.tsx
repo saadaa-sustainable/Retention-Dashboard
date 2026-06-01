@@ -807,19 +807,32 @@ function aggregateBy<T extends string>(
 function SegmentTab(){
   const campaigns=useDashStore(s=>s.campaigns)
   const [openCat,setOpenCat]=useState<SegmentCategory|null>(null)
+  const [audience,setAudience]=useState<'ALL'|Audience>('ALL')
+
+  // Scope by audience first — both the category rollup and the raw-segment
+  // drilldown share this filter so switching audience updates everything.
+  const audienceScoped=useMemo(
+    ()=>audience==='ALL' ? campaigns : campaigns.filter(c=>audienceOf(c.segment,c.name)===audience),
+    [campaigns,audience],
+  )
+  const audienceCounts=useMemo(()=>{
+    let np=0,pu=0
+    for(const r of campaigns) (audienceOf(r.segment,r.name)==='Non-Purchaser' ? np++ : pu++)
+    return {np,pu}
+  },[campaigns])
 
   // Aggregate by high-level segment category (LTV buckets, ABC, ATC, …)
-  const categoryRows=useMemo(()=>aggregateBy(campaigns, c => categorize(c.segment, c.name)).sort((a,b)=>b.sales-a.sales),[campaigns])
+  const categoryRows=useMemo(()=>aggregateBy(audienceScoped, c => categorize(c.segment, c.name)).sort((a,b)=>b.sales-a.sales),[audienceScoped])
 
   // When a category is opened, aggregate raw segments WITHIN that category
   const segmentRows=useMemo(()=>{
     if(!openCat) return []
     return aggregateBy(
-      campaigns,
+      audienceScoped,
       c => c.segment || '(no segment)',
       c => categorize(c.segment, c.name) === openCat,
     ).sort((a,b)=>b.sales-a.sales)
-  },[campaigns, openCat])
+  },[audienceScoped, openCat])
 
   const activeRows = openCat ? segmentRows : categoryRows
   const {sorted,toggle,dir}=useSort(activeRows,'sales')
@@ -876,6 +889,22 @@ function SegmentTab(){
         ) : (
           <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{categoryRows.length}</span> segment categor{categoryRows.length===1?'y':'ies'} · click a row to see raw segments</p>
         )}
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-400 tabular-nums">{audienceCounts.np} non-purchaser · {audienceCounts.pu} purchaser</span>
+          <div className="inline-flex rounded-lg border border-black/[0.08] bg-white p-0.5">
+            {(['ALL','Non-Purchaser','Purchaser'] as const).map(a=>(
+              <button
+                key={a}
+                onClick={()=>setAudience(a)}
+                className={`px-2.5 h-7 text-[11px] rounded-md transition-colors ${
+                  audience===a
+                    ? 'bg-blue-50 text-blue-700 font-semibold'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >{a==='ALL'?'All audiences':a}</button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <Panel><div className="overflow-auto max-h-[calc(100vh-260px)]"><table className="w-full" style={{minWidth:'780px'}}>
@@ -1145,15 +1174,44 @@ function RevenueTab(){
 
 function HistoricalTab(){
   const campaigns=useDashStore(s=>s.campaigns)
+  const [audience,setAudience]=useState<'ALL'|Audience>('ALL')
+  const audienceScoped=useMemo(
+    ()=>audience==='ALL' ? campaigns : campaigns.filter(c=>audienceOf(c.segment,c.name)===audience),
+    [campaigns,audience],
+  )
+  const audienceCounts=useMemo(()=>{
+    let np=0,pu=0
+    for(const r of campaigns) (audienceOf(r.segment,r.name)==='Non-Purchaser' ? np++ : pu++)
+    return {np,pu}
+  },[campaigns])
   // Take only the most recent 15 days that have data. computeDaily returns ascending,
   // so slice(-15) keeps the trailing window.
-  const daily=useMemo(()=>computeDaily(campaigns).slice(-15),[campaigns])
+  const daily=useMemo(()=>computeDaily(audienceScoped).slice(-15),[audienceScoped])
   const {sorted,toggle,dir}=useSort(daily,'date','asc')
   const salesData=daily.map(d=>({date:d.date.slice(5),sales:d.sales,buyers:d.buyers}))
   const sentData=daily.map(d=>({date:d.date.slice(5),sent:d.sent,delivered:d.delivered}))
   return(
     <div>
       <DefinitionsPanel items={DEFS.historical}/>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <span className="text-[12px] text-gray-500">Last <span className="font-semibold text-gray-800">{daily.length}</span> days with data</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-400 tabular-nums">{audienceCounts.np} non-purchaser · {audienceCounts.pu} purchaser</span>
+          <div className="inline-flex rounded-lg border border-black/[0.08] bg-white p-0.5">
+            {(['ALL','Non-Purchaser','Purchaser'] as const).map(a=>(
+              <button
+                key={a}
+                onClick={()=>setAudience(a)}
+                className={`px-2.5 h-7 text-[11px] rounded-md transition-colors ${
+                  audience===a
+                    ? 'bg-blue-50 text-blue-700 font-semibold'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >{a==='ALL'?'All audiences':a}</button>
+            ))}
+          </div>
+        </div>
+      </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-4">
         <Panel><PanelBody>
           <PanelTitle>Daily sales trend</PanelTitle>
