@@ -34,7 +34,6 @@ const FORMAT_SPECS: Record<ExportType, FormatSpec> = {
       'Name auto-parses these dimensions: campaign_id (e.g. C135), segment, content theme, offer, format.',
       'Offer is optional — many campaigns don\'t run one. When present it can be either OFF/OF-prefixed (e.g. OF-RAHOSAADAA) or directly after the format token (e.g. IMG_SUMMER300). Campaigns without a detectable offer code are still ingested; they just won\'t appear in the Offer Analytics tab.',
       'CTR & ROAS may be a percentage like "4.85%", a number, or "NA"/blank.',
-      'Auto-derived metrics: when Cost is 0/blank, it\'s computed as delivered × channel rate (WhatsApp ₹0.870, SMS ₹0.115, Email ₹0.030, RCS ₹0.130). When ROAS is blank/NA, it\'s computed as Sales ÷ Cost. Provide your own values to override.',
     ],
   },
   automations: {
@@ -52,7 +51,6 @@ const FORMAT_SPECS: Record<ExportType, FormatSpec> = {
       'Revenue columns are flexible: use Sales + Orders for standard automations, OR Recovered Amount + Recovered Carts for cart-recovery automations. The dashboard unifies revenue as Sales + Recovered Amount per row, so no data is lost regardless of which set you provide.',
       'Channel values lowercased: whatsapp · sms · email · rcs.',
       'CTR & ROAS may be "NA", blank, a number, or a percentage like "12.36%".',
-      'Auto-derived metrics: when Cost is 0/blank, it\'s computed as delivered × channel rate (WhatsApp ₹0.870, SMS ₹0.115, Email ₹0.030, RCS ₹0.130). When ROAS is blank/NA, it\'s computed as Revenue ÷ Cost (Revenue = Sales + Recovered Amount). Provide your own values to override.',
       'Multiple rows with the same (Name, Date) are kept if their metrics differ; only byte-identical duplicates are skipped.',
     ],
   },

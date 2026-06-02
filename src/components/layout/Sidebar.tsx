@@ -1,15 +1,17 @@
 'use client'
-import { BarChart2, Megaphone, Settings2, Target, Tag, TrendingDown, DollarSign, LineChart, Upload, RefreshCw, Sparkles } from 'lucide-react'
+import { BarChart2, Megaphone, Settings2, Target, Tag, TrendingDown, DollarSign, LineChart, Upload, RefreshCw, Sparkles, LayoutGrid } from 'lucide-react'
 
 export type TabId =
   | 'overview' | 'campaigns' | 'automations'
   | 'segment' | 'offer' | 'funnel' | 'revenue' | 'historical'
+  | 'templates'
 
 const NAV = [
   { section: 'Analytics', items: [
     { id: 'overview'    as TabId, label: 'Overview',            icon: BarChart2   },
     { id: 'campaigns'   as TabId, label: 'Campaigns',           icon: Megaphone   },
     { id: 'automations' as TabId, label: 'Automations',         icon: Settings2   },
+    { id: 'templates'   as TabId, label: 'Templates',           icon: LayoutGrid  },
   ]},
   { section: 'Intelligence', items: [
     { id: 'segment'   as TabId, label: 'Segment Analytics',   icon: Target      },

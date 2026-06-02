@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS automation_creatives (
   template_name         TEXT NOT NULL,
   template_copy         TEXT,
   creative_media_link   TEXT,
+  template_type         TEXT,                -- Utility/Marketing/Transactional/RCS/SMS/Email/Authentication (manual)
+  status                TEXT DEFAULT 'Active', -- Active/Paused/Deleted (manual)
   ingested_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT automation_creatives_name_template_unique UNIQUE (automation_name, template_name)
 );
@@ -91,6 +93,8 @@ CREATE TABLE IF NOT EXISTS campaign_creatives (
   template_name         TEXT NOT NULL,
   template_copy         TEXT,
   creative_media_link   TEXT,
+  template_type         TEXT,                -- Utility/Marketing/Transactional/RCS/SMS/Email/Authentication (manual)
+  status                TEXT DEFAULT 'Active', -- Active/Paused/Deleted (manual)
   ingested_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT campaign_creatives_unique UNIQUE (campaign_id, template_name)
 );

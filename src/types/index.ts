@@ -137,12 +137,17 @@ export interface KpiSummary {
 
 // ── Automation creatives ───────────────────────────────────────────────────
 
+export type TemplateType = 'Utility' | 'Marketing' | 'Transactional' | 'RCS' | 'SMS' | 'Email' | 'Authentication'
+export type TemplateStatus = 'Active' | 'Paused' | 'Deleted'
+
 export interface AutomationCreative {
   id: string
   automation_name: string
   template_name: string
   template_copy: string | null
   creative_media_link: string | null
+  template_type: TemplateType | null
+  status: TemplateStatus | null
   ingested_at: string
 }
 
@@ -155,7 +160,23 @@ export interface CampaignCreative {
   template_name: string
   template_copy: string | null
   creative_media_link: string | null
+  template_type: TemplateType | null
+  status: TemplateStatus | null
   ingested_at: string
+}
+
+// ── Unified templates view ────────────────────────────────────────────────
+
+export interface TemplateRow {
+  id: string
+  retention_type: 'Campaign' | 'Automation'
+  source_table: 'campaign_creatives' | 'automation_creatives'
+  parent_name: string        // campaign_id (Campaign) or automation_name (Automation)
+  template_name: string
+  template_copy: string | null
+  creative_media_link: string | null
+  template_type: TemplateType | null
+  status: TemplateStatus | null
 }
 
 // ── Upload / ingestion ─────────────────────────────────────────────────────

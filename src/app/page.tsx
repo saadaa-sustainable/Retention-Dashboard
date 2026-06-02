@@ -4,7 +4,7 @@ import { useDashStore, type DataScope } from '@/lib/store'
 import { computeKpis, computeFunnel, computeOffers, computeDaily, fmtCurrency, fmtNumber, fmtPct, safeDivide, deliveryRate, openRate, revenuePerDel, sumKey } from '@/lib/metrics'
 import { DEFS } from '@/lib/definitions'
 import Sidebar, { type TabId } from '@/components/layout/Sidebar'
-import type { Campaign, Automation } from '@/types'
+import type { Campaign, Automation, TemplateRow, TemplateType, TemplateStatus } from '@/types'
 import TopBar from '@/components/layout/TopBar'
 import UploadModal from '@/components/ui/UploadModal'
 import { KpiCard, MetricCard, Panel, PanelBody, PanelTitle, DefinitionsPanel, FunnelRow, RoasBadge, DrBadge, Th, Td } from '@/components/ui'
@@ -1184,6 +1184,186 @@ function RevenueTab(){
   )
 }
 
+const TEMPLATE_TYPES: TemplateType[] = ['Utility','Marketing','Transactional','RCS','SMS','Email','Authentication']
+const TEMPLATE_STATUSES: TemplateStatus[] = ['Active','Paused','Deleted']
+
+function TemplatesTab(){
+  const [rows,setRows]=useState<TemplateRow[]|null>(null)
+  const [error,setError]=useState<string|null>(null)
+  const [search,setSearch]=useState('')
+  const [retentionFilter,setRetentionFilter]=useState<'ALL'|'Campaign'|'Automation'>('ALL')
+  const [typeFilter,setTypeFilter]=useState<'ALL'|TemplateType|'(unset)'>('ALL')
+  const [statusFilter,setStatusFilter]=useState<'ALL'|TemplateStatus|'(unset)'>('ALL')
+  const [saving,setSaving]=useState<Record<string,'saving'|'saved'|'error'>>({})
+
+  useEffect(()=>{
+    fetch('/api/templates')
+      .then(r=>r.json())
+      .then(j=>{ if(j.error) setError(j.error); else setRows(j.data||[]) })
+      .catch(e=>setError(e instanceof Error?e.message:'Failed to load'))
+  },[])
+
+  const filtered=useMemo(()=>{
+    if(!rows) return []
+    const q=search.trim().toLowerCase()
+    return rows.filter(r=>{
+      if(retentionFilter!=='ALL' && r.retention_type!==retentionFilter) return false
+      if(typeFilter!=='ALL'){
+        if(typeFilter==='(unset)' ? !!r.template_type : r.template_type!==typeFilter) return false
+      }
+      if(statusFilter!=='ALL'){
+        if(statusFilter==='(unset)' ? !!r.status : r.status!==statusFilter) return false
+      }
+      if(!q) return true
+      const hay=`${r.retention_type} ${r.parent_name} ${r.template_name} ${r.template_copy||''} ${r.template_type||''} ${r.status||''}`.toLowerCase()
+      return hay.includes(q)
+    })
+  },[rows,search,retentionFilter,typeFilter,statusFilter])
+
+  const updateField=async(row:TemplateRow,field:'template_type'|'status',value:string)=>{
+    if(!rows) return
+    const newValue = value || null
+    const rowKey = `${row.source_table}:${row.id}`
+    // Optimistic update
+    setRows(prev=>prev?prev.map(r=>(r.source_table===row.source_table && r.id===row.id)?{...r,[field]:newValue as TemplateType|TemplateStatus|null}:r):prev)
+    setSaving(s=>({...s,[rowKey]:'saving'}))
+    try{
+      const res=await fetch('/api/templates',{
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({source_table:row.source_table,id:row.id,[field]:newValue}),
+      })
+      const json=await res.json()
+      if(!res.ok) throw new Error(json.error||'Save failed')
+      setSaving(s=>({...s,[rowKey]:'saved'}))
+      setTimeout(()=>setSaving(s=>{const c={...s}; delete c[rowKey]; return c}),1500)
+    }catch(e){
+      setSaving(s=>({...s,[rowKey]:'error'}))
+      console.error('Template save failed:',e)
+    }
+  }
+
+  // Summary counts
+  const counts=useMemo(()=>{
+    if(!rows) return {total:0,campaign:0,automation:0,unsetType:0,unsetStatus:0}
+    let campaign=0,automation=0,unsetType=0,unsetStatus=0
+    for(const r of rows){
+      if(r.retention_type==='Campaign') campaign++; else automation++
+      if(!r.template_type) unsetType++
+      if(!r.status) unsetStatus++
+    }
+    return {total:rows.length,campaign,automation,unsetType,unsetStatus}
+  },[rows])
+
+  return(
+    <div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
+        <MetricCard label="Total Templates" value={fmt(counts.total)}/>
+        <MetricCard label="Campaign" value={fmt(counts.campaign)}/>
+        <MetricCard label="Automation" value={fmt(counts.automation)}/>
+        <MetricCard label="Type Unset" value={fmt(counts.unsetType)}/>
+        <MetricCard label="Status Unset" value={fmt(counts.unsetStatus)}/>
+      </div>
+
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <p className="text-[12px] text-gray-500"><span className="font-semibold text-gray-800 tabular-nums">{filtered.length}</span> templates</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={retentionFilter} onChange={e=>setRetentionFilter(e.target.value as typeof retentionFilter)} className="h-8 text-[12px] px-2 rounded-md border border-black/[0.12] bg-white text-gray-700 focus:outline-none">
+            <option value="ALL">All retention types</option><option value="Campaign">Campaign</option><option value="Automation">Automation</option>
+          </select>
+          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value as typeof typeFilter)} className="h-8 text-[12px] px-2 rounded-md border border-black/[0.12] bg-white text-gray-700 focus:outline-none">
+            <option value="ALL">All template types</option>
+            <option value="(unset)">(unset)</option>
+            {TEMPLATE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value as typeof statusFilter)} className="h-8 text-[12px] px-2 rounded-md border border-black/[0.12] bg-white text-gray-700 focus:outline-none">
+            <option value="ALL">All statuses</option>
+            <option value="(unset)">(unset)</option>
+            {TEMPLATE_STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          <div className="flex items-center gap-1.5 border border-black/[0.08] rounded-lg px-2.5 h-8 bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-colors">
+            <Search size={13} className="text-gray-400" />
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, copy, type…" className="border-none bg-transparent text-[12px] outline-none w-44 text-gray-700 placeholder:text-gray-400"/>
+          </div>
+        </div>
+      </div>
+
+      {error && <div className="bg-red-50 border border-red-200/80 rounded-xl p-3 text-[12px] text-red-700 mb-3">Failed to load templates: {error}</div>}
+      {!rows && !error && <div className="text-center py-10 text-[12px] text-gray-400">Loading templates…</div>}
+
+      {rows && (
+        <Panel>
+          <div className="overflow-auto max-h-[calc(100vh-280px)]">
+            <table className="w-full" style={{minWidth:'1100px'}}>
+              <thead className="bg-gray-50 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]">
+                <tr>
+                  <Th right={false}>Retention Type</Th>
+                  <Th right={false}>Campaign / Automation</Th>
+                  <Th right={false}>Template Name</Th>
+                  <Th right={false}>Creative</Th>
+                  <Th right={false}>Template Type</Th>
+                  <Th right={false}>Status</Th>
+                </tr>
+              </thead>
+              <tbody>{filtered.map(r=>{
+                const rowKey=`${r.source_table}:${r.id}`
+                const saveState=saving[rowKey]
+                return (
+                  <tr key={rowKey} className="hover:bg-blue-50/40 transition-colors">
+                    <Td right={false}>
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${r.retention_type==='Campaign'?'bg-blue-50 text-blue-700':'bg-violet-50 text-violet-700'}`}>{r.retention_type}</span>
+                    </Td>
+                    <Td right={false} className="font-semibold text-[12px] max-w-[220px] truncate text-gray-800" title={r.parent_name}>{r.parent_name}</Td>
+                    <Td right={false} className="font-mono text-[11px] max-w-[200px] truncate text-gray-700" title={r.template_name}>{r.template_name}</Td>
+                    <Td right={false}>
+                      {r.creative_media_link
+                        ? <a href={r.creative_media_link} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline">Open ↗</a>
+                        : <span className="text-[11px] text-gray-300">—</span>}
+                    </Td>
+                    <Td right={false}>
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          value={r.template_type || ''}
+                          onChange={e=>updateField(r,'template_type',e.target.value)}
+                          className={`h-7 text-[11px] px-1.5 rounded-md border bg-white text-gray-700 focus:outline-none focus:border-blue-400
+                            ${r.template_type ? 'border-black/[0.12]' : 'border-amber-300 bg-amber-50/40 text-amber-700'}`}
+                        >
+                          <option value="">— Select —</option>
+                          {TEMPLATE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                        </select>
+                        {saveState==='saving' && <span className="text-[10px] text-gray-400">…</span>}
+                        {saveState==='saved'  && <span className="text-[10px] text-emerald-600">✓</span>}
+                        {saveState==='error'  && <span className="text-[10px] text-red-600">✗</span>}
+                      </div>
+                    </Td>
+                    <Td right={false}>
+                      <select
+                        value={r.status || ''}
+                        onChange={e=>updateField(r,'status',e.target.value)}
+                        className={`h-7 text-[11px] px-1.5 rounded-md border focus:outline-none focus:border-blue-400
+                          ${r.status==='Active' ? 'border-emerald-300 bg-emerald-50/40 text-emerald-700' :
+                            r.status==='Paused' ? 'border-amber-300 bg-amber-50/40 text-amber-700' :
+                            r.status==='Deleted' ? 'border-red-300 bg-red-50/40 text-red-700' :
+                            'border-black/[0.12] bg-white text-gray-700'}`}
+                      >
+                        <option value="">— Select —</option>
+                        {TEMPLATE_STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </Td>
+                  </tr>
+                )
+              })}
+              {filtered.length===0 && rows.length>0 && <tr><td colSpan={6} className="text-center py-10 text-[12px] text-gray-400">No templates match the current filters.</td></tr>}
+              {rows.length===0 && <tr><td colSpan={6} className="text-center py-10 text-[12px] text-gray-400">No templates uploaded yet. Upload via the Upload Export modal (Auto Creatives / Camp Creatives).</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+    </div>
+  )
+}
+
 function HistoricalTab(){
   const campaigns=useDashStore(s=>s.campaigns)
   const [audience,setAudience]=useState<'ALL'|Audience>('ALL')
@@ -1321,7 +1501,7 @@ export default function DashboardPage(){
   }
 
   const tabs:Record<TabId,React.ReactNode>={
-    overview:<OverviewTab/>,campaigns:<CampaignsTab/>,automations:<AutomationsTab/>,
+    overview:<OverviewTab/>,campaigns:<CampaignsTab/>,automations:<AutomationsTab/>,templates:<TemplatesTab/>,
     segment:<SegmentTab/>,offer:<OfferTab/>,funnel:<FunnelTab/>,revenue:<RevenueTab/>,historical:<HistoricalTab/>
   }
 
