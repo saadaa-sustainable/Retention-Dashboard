@@ -10,6 +10,52 @@ export function detectExportType(headers: string[]): ExportType {
   return 'automations'
 }
 
+// ── Channel cost rate-card ────────────────────────────────────────────────
+// Cost per delivered message by channel (₹). Used to derive `cost` when the
+// CSV's Cost column is blank/zero, and to derive `roas` when ROAS is missing.
+// The WhatsApp rate uses the Marketing tier (the most common for retention
+// sends) — sub-tier rates (Utility ₹0.115, Auth ₹0, Service ₹0.040) are not
+// distinguishable from the CSV alone.
+//
+// Source: platform fee card (Saadaa retention stack):
+//   WhatsApp Marketing  ₹0.870/message
+//   WhatsApp Utility    ₹0.115/message
+//   WhatsApp Auth       ₹0/message
+//   WhatsApp Service    ₹0.040/message
+//   SMS                 ₹0.115/unit
+//   Email               ₹0.030/unit
+//   RCS                 ₹0.130/message
+// Platform Fee ₹50,000/month is overhead, NOT per-message, so it's not
+// included here.
+const CHANNEL_RATE_PER_DELIVERED: Record<string, number> = {
+  whatsapp: 0.870,
+  sms:      0.115,
+  email:    0.030,
+  rcs:      0.130,
+}
+
+// Compute Cost (if missing/zero) and ROAS (if missing/zero) from the row's
+// channel + delivered + revenue. Returns the original values when they're
+// already present. Revenue should already be unified for the row (campaigns:
+// sales; automations: sales + recovered_amount).
+export function deriveCostAndRoas(opts: {
+  channel: string
+  delivered: number
+  revenue: number
+  cost: number
+  roas: number | null
+}): { cost: number; roas: number | null } {
+  let { cost, roas } = opts
+  if (cost <= 0 && opts.delivered > 0) {
+    const rate = CHANNEL_RATE_PER_DELIVERED[opts.channel.toLowerCase()] ?? 0
+    if (rate > 0) cost = Math.round(opts.delivered * rate * 100) / 100
+  }
+  if ((roas == null || roas <= 0) && cost > 0 && opts.revenue > 0) {
+    roas = Math.round((opts.revenue / cost) * 100) / 100
+  }
+  return { cost, roas }
+}
+
 // ── Clean numeric ─────────────────────────────────────────────────────────
 function toNum(v: unknown): number {
   if (v === null || v === undefined || v === '' || v === 'NA' || v === 'N/A') return 0
@@ -203,6 +249,20 @@ export function parseCampaignsCSV(raw: string): Omit<Campaign, 'id' | 'ingested_
     const { campaign_id, source_type, offer, format } = parseCampaignName(name)
     const segment = extractSegment(source, name)
 
+    const channel   = String(row['Channel'] || 'whatsapp').toLowerCase() as Campaign['channel']
+    const delivered = toNum(row['Delivered'])
+    const sales     = toNum(row['Sales'])
+    // Auto-derive Cost from delivered × channel rate when CSV omits it (RCS
+    // rows in real exports often have Cost = 0 / ROAS = NA), and auto-derive
+    // ROAS = sales / cost when ROAS is missing.
+    const { cost, roas } = deriveCostAndRoas({
+      channel,
+      delivered,
+      revenue: sales,
+      cost: toNum(row['Cost']),
+      roas: toNullNum(row['ROAS']),
+    })
+
     return {
       name,
       campaign_id,
@@ -210,19 +270,19 @@ export function parseCampaignsCSV(raw: string): Omit<Campaign, 'id' | 'ingested_
       segment,
       offer,
       format,
-      channel:       String(row['Channel'] || 'whatsapp').toLowerCase() as Campaign['channel'],
+      channel,
       date:          String(row['Date'] || '').slice(0, 10),
       sent:          toNum(row['Sent']),
-      delivered:     toNum(row['Delivered']),
+      delivered,
       seen:          toNum(row['Seen']),
       ctr:           toNullNum(row['CTR']),
       clicks:        toNum(row['Clicks']),
       buyers:        toNum(row['Buyers']),
       unsubscribers: toNum(row['Unsubscribers']),
-      sales:         toNum(row['Sales']),
+      sales,
       orders:        toNum(row['Orders']),
-      cost:          toNum(row['Cost']),
-      roas:          toNullNum(row['ROAS']),
+      cost,
+      roas,
       source_raw:    source.slice(0, 1000),
     }
   }).filter(r => r.name && r.date)
@@ -255,23 +315,35 @@ export function parseAutomationsCSV(raw: string, snapshotDate: string | null = n
     // shape loses data.
     const recoveredAmount = toNum(valueFrom(row, ['Recovered Amount', 'recovered_amount', 'Recovered_Amount']))
     const recoveredCarts  = toNum(valueFrom(row, ['Recovered Carts',  'recovered_carts',  'Recovered_Carts']))
+    const channel   = String(valueFrom(row, ['Channel', 'channel']) || 'whatsapp').toLowerCase() as Automation['channel']
+    const delivered = toNum(valueFrom(row, ['Delivered', 'delivered']))
+    const sales     = toNum(valueFrom(row, ['Sales', 'sales', 'Revenue INR', 'revenue_inr']))
+    // Unified revenue for cost/ROAS derivation: standard sales + cart-recovery
+    // amount on the same row.
+    const { cost, roas } = deriveCostAndRoas({
+      channel,
+      delivered,
+      revenue: sales + recoveredAmount,
+      cost: toNum(valueFrom(row, ['Cost', 'cost', 'Cost INR', 'cost_inr'])),
+      roas: toNullNum(valueFrom(row, ['ROAS', 'roas'])),
+    })
 
     return {
       name,
       type: (recoveredAmount > 0 || recoveredCarts > 0) ? 'cart_recovery' as const : 'standard' as const,
-      channel:          String(valueFrom(row, ['Channel', 'channel']) || 'whatsapp').toLowerCase() as Automation['channel'],
+      channel,
       date:             perRowDate,
       sent:             toNum(valueFrom(row, ['Sent', 'sent'])),
-      delivered:        toNum(valueFrom(row, ['Delivered', 'delivered'])),
+      delivered,
       seen:             toNum(valueFrom(row, ['Seen', 'seen', 'Opened', 'opened'])),
       ctr:              toNullNum(valueFrom(row, ['CTR', 'ctr'])),
       clicks:           toNum(valueFrom(row, ['Clicks', 'clicks', 'Clicked', 'clicked'])),
       buyers:           toNum(valueFrom(row, ['Buyers', 'buyers'])),
       unsubscribers:    toNum(valueFrom(row, ['Unsubscribers', 'unsubscribers'])),
-      sales:            toNum(valueFrom(row, ['Sales', 'sales', 'Revenue INR', 'revenue_inr'])),
+      sales,
       orders:           toNum(valueFrom(row, ['Orders', 'orders'])),
-      cost:             toNum(valueFrom(row, ['Cost', 'cost', 'Cost INR', 'cost_inr'])),
-      roas:             toNullNum(valueFrom(row, ['ROAS', 'roas'])),
+      cost,
+      roas,
       recovered_amount: recoveredAmount,
       recovered_carts:  recoveredCarts,
     }
