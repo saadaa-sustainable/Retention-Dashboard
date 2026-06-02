@@ -1189,13 +1189,14 @@ const TEMPLATE_STATUSES: TemplateStatus[] = ['Active','Paused','Deleted']
 
 type CostRate = { template_type: TemplateType; cost_per_message: number; updated_at: string }
 
-// Compact in-Templates-tab card for editing per-template-type cost rates.
-// Rates here apply to NEW uploads only (calculated at ingest time) — existing
-// rows in the DB are never touched.
+// Cost rate editor — explicit Save button at the top. Drafts collected per row
+// and submitted in one batch. Rates apply only to NEW uploads after saving;
+// previously ingested data is never touched.
 function CostRatesCard(){
   const [rates,setRates]=useState<CostRate[]|null>(null)
   const [drafts,setDrafts]=useState<Record<string,string>>({})
-  const [saving,setSaving]=useState<Record<string,'saving'|'saved'|'error'>>({})
+  const [savingAll,setSavingAll]=useState(false)
+  const [lastSaveStatus,setLastSaveStatus]=useState<{ok:boolean,msg:string}|null>(null)
   const [error,setError]=useState<string|null>(null)
 
   useEffect(()=>{
@@ -1211,100 +1212,165 @@ function CostRatesCard(){
     return TEMPLATE_TYPES.map(t => m.get(t) || { template_type:t as TemplateType, cost_per_message:0, updated_at:'' })
   },[rates])
 
-  const saveRate=async(template_type:string,raw:string)=>{
-    const value=Number(raw)
-    if(!Number.isFinite(value)||value<0){
-      setSaving(s=>({...s,[template_type]:'error'}))
-      return
+  // Pending changes = drafts whose value differs from the persisted rate.
+  const pending=useMemo(()=>{
+    const out: Array<{template_type:string, value:number}> = []
+    for (const r of rowsByType) {
+      const d=drafts[r.template_type]
+      if (d === undefined) continue
+      const v = Number(d)
+      if (!Number.isFinite(v) || v < 0) continue
+      if (v !== Number(r.cost_per_message)) out.push({template_type:r.template_type, value:v})
     }
-    setSaving(s=>({...s,[template_type]:'saving'}))
+    return out
+  },[drafts, rowsByType])
+  const dirty=pending.length
+
+  const saveAll=async()=>{
+    if (!dirty) return
+    setSavingAll(true)
+    setLastSaveStatus(null)
     try{
-      const res=await fetch('/api/template-type-costs',{
-        method:'PATCH',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({template_type,cost_per_message:value}),
-      })
-      const json=await res.json()
-      if(!res.ok) throw new Error(json.error||'Save failed')
+      // Fire all PATCHes in parallel. If any fail, surface that.
+      const results=await Promise.all(pending.map(p=>
+        fetch('/api/template-type-costs',{
+          method:'PATCH',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({template_type:p.template_type, cost_per_message:p.value}),
+        }).then(async res=>({ok:res.ok, json: await res.json(), template_type:p.template_type, value:p.value}))
+      ))
+      const failed=results.filter(r=>!r.ok)
+      if (failed.length) throw new Error(`Failed to save ${failed.length} rate${failed.length===1?'':'s'}`)
+
+      // Local-update on success.
+      const now=new Date().toISOString()
       setRates(prev=>{
-        if(!prev) return prev
-        const exists=prev.find(r=>r.template_type===template_type)
-        if(exists) return prev.map(r=>r.template_type===template_type?{...r,cost_per_message:value,updated_at:new Date().toISOString()}:r)
-        return [...prev, {template_type:template_type as TemplateType, cost_per_message:value, updated_at:new Date().toISOString()}]
+        if (!prev) return prev
+        const m=new Map<string, CostRate>(prev.map(r=>[r.template_type, r]))
+        for (const p of pending) {
+          m.set(p.template_type, { template_type:p.template_type as TemplateType, cost_per_message:p.value, updated_at:now })
+        }
+        return [...m.values()]
       })
-      setDrafts(d=>{const c={...d}; delete c[template_type]; return c})
-      setSaving(s=>({...s,[template_type]:'saved'}))
-      setTimeout(()=>setSaving(s=>{const c={...s}; delete c[template_type]; return c}),1500)
+      setDrafts({})
+      setLastSaveStatus({ok:true, msg:`Saved ${pending.length} rate${pending.length===1?'':'s'}`})
+      setTimeout(()=>setLastSaveStatus(null), 3000)
     }catch(e){
-      console.error('Save rate failed:',e)
-      setSaving(s=>({...s,[template_type]:'error'}))
+      console.error('Save rates failed:',e)
+      setLastSaveStatus({ok:false, msg: e instanceof Error ? e.message : 'Save failed'})
+    } finally {
+      setSavingAll(false)
     }
   }
 
   return(
-    <Panel className="mb-4">
-      <div className="px-4 py-3 border-b border-black/[0.06]">
-        <PanelTitle>Cost rate per template type</PanelTitle>
-        <p className="text-[11px] text-gray-500 mt-1">
-          Rates apply only to <span className="font-semibold text-gray-700">new uploads after saving</span>. Previously ingested data is not touched. Set rate to <span className="font-mono">0</span> to skip ROAS derivation for that type.
-        </p>
-      </div>
-      {error && <div className="px-4 py-2 bg-red-50 border-b border-red-100 text-[12px] text-red-700">Failed to load: {error}</div>}
-      {!rates && !error && <div className="px-4 py-3 text-[12px] text-gray-400">Loading rate card…</div>}
-      {rates && (
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50/60">
-              <tr>
-                <Th right={false}>Template Type</Th>
-                <Th right={false}>Cost / delivered message (₹)</Th>
-                <Th right={false}>Last updated</Th>
-              </tr>
-            </thead>
-            <tbody>{rowsByType.map(r=>{
-              const draft=drafts[r.template_type]
-              const value=draft !== undefined ? draft : String(r.cost_per_message)
-              const state=saving[r.template_type]
-              return (
-                <tr key={r.template_type} className="hover:bg-blue-50/40 transition-colors">
-                  <Td right={false} className="font-semibold text-gray-800">{r.template_type}</Td>
-                  <Td right={false}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-400 text-[12px]">₹</span>
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.001"
-                        value={value}
-                        onChange={e=>setDrafts(d=>({...d,[r.template_type]:e.target.value}))}
-                        onBlur={()=>{
-                          if(draft !== undefined && draft !== String(r.cost_per_message)) saveRate(r.template_type, draft)
-                        }}
-                        onKeyDown={e=>{
-                          if(e.key==='Enter') (e.target as HTMLInputElement).blur()
-                          if(e.key==='Escape') setDrafts(d=>{const c={...d}; delete c[r.template_type]; return c})
-                        }}
-                        className="w-28 h-8 px-2 text-[12px] rounded-md border border-black/[0.12] bg-white text-gray-700 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                      />
-                      {state==='saving' && <span className="text-[11px] text-gray-400">saving…</span>}
-                      {state==='saved'  && <span className="text-[11px] text-emerald-600">✓ saved</span>}
-                      {state==='error'  && <span className="text-[11px] text-red-600">✗ failed</span>}
-                    </div>
-                  </Td>
-                  <Td right={false} className="text-gray-500 text-[11px] whitespace-nowrap">
-                    {r.updated_at ? new Date(r.updated_at).toLocaleString('en-IN', {dateStyle:'medium', timeStyle:'short'}) : '—'}
-                  </Td>
-                </tr>
-              )
-            })}</tbody>
-          </table>
+    <div>
+      <div className="flex items-start justify-between mb-3 gap-4 flex-wrap">
+        <div>
+          <h3 className="text-[13px] font-semibold text-gray-800">Cost rate per template type</h3>
+          <p className="text-[11px] text-gray-500 mt-1 max-w-[640px]">
+            Rates apply only to <span className="font-semibold text-gray-700">new uploads after saving</span>. Previously ingested data is not touched. Set a rate to <span className="font-mono">0</span> to skip ROAS derivation for that type.
+          </p>
         </div>
+        <div className="flex items-center gap-3">
+          {lastSaveStatus && (
+            <span className={`text-[11px] ${lastSaveStatus.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+              {lastSaveStatus.ok ? '✓ ' : '✗ '}{lastSaveStatus.msg}
+            </span>
+          )}
+          <button
+            onClick={saveAll}
+            disabled={!dirty || savingAll}
+            className={`h-8 px-3 text-[12px] rounded-lg font-medium transition-colors
+              ${(!dirty || savingAll)
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+          >
+            {savingAll ? 'Saving…' : dirty ? `Save ${dirty} change${dirty===1?'':'s'}` : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="bg-red-50 border border-red-200/80 rounded-xl p-3 text-[12px] text-red-700 mb-3">Failed to load: {error}</div>}
+      {!rates && !error && <div className="text-center py-10 text-[12px] text-gray-400">Loading rate card…</div>}
+
+      {rates && (
+        <Panel>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50/60">
+                <tr>
+                  <Th right={false}>Template Type</Th>
+                  <Th right={false}>Cost / delivered message (₹)</Th>
+                  <Th right={false}>Last updated</Th>
+                </tr>
+              </thead>
+              <tbody>{rowsByType.map(r=>{
+                const draft=drafts[r.template_type]
+                const value=draft !== undefined ? draft : String(r.cost_per_message)
+                const isDirty=draft !== undefined && Number(draft) !== Number(r.cost_per_message)
+                return (
+                  <tr key={r.template_type} className="hover:bg-blue-50/40 transition-colors">
+                    <Td right={false} className="font-semibold text-gray-800">{r.template_type}</Td>
+                    <Td right={false}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400 text-[12px]">₹</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.001"
+                          value={value}
+                          onChange={e=>setDrafts(d=>({...d,[r.template_type]:e.target.value}))}
+                          onKeyDown={e=>{
+                            if(e.key==='Enter') { e.preventDefault(); saveAll() }
+                            if(e.key==='Escape') setDrafts(d=>{const c={...d}; delete c[r.template_type]; return c})
+                          }}
+                          className={`w-28 h-8 px-2 text-[12px] rounded-md border bg-white text-gray-700 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100
+                            ${isDirty ? 'border-amber-300 bg-amber-50/40' : 'border-black/[0.12]'}`}
+                        />
+                        {isDirty && <span className="text-[11px] text-amber-600">edited</span>}
+                      </div>
+                    </Td>
+                    <Td right={false} className="text-gray-500 text-[11px] whitespace-nowrap">
+                      {r.updated_at ? new Date(r.updated_at).toLocaleString('en-IN', {dateStyle:'medium', timeStyle:'short'}) : '—'}
+                    </Td>
+                  </tr>
+                )
+              })}</tbody>
+            </table>
+          </div>
+        </Panel>
       )}
-    </Panel>
+    </div>
   )
 }
 
 function TemplatesTab(){
+  const [subTab,setSubTab]=useState<'classify'|'costs'>('classify')
+  return (
+    <div>
+      <div className="inline-flex rounded-lg border border-black/[0.08] bg-white p-0.5 mb-4">
+        {([
+          ['classify','Templates'],
+          ['costs','Cost Rates'],
+        ] as const).map(([id,label])=>(
+          <button
+            key={id}
+            onClick={()=>setSubTab(id)}
+            className={`px-3 h-7 text-[11.5px] rounded-md transition-colors ${
+              subTab===id
+                ? 'bg-blue-50 text-blue-700 font-semibold'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >{label}</button>
+        ))}
+      </div>
+      {subTab==='classify' ? <TemplatesClassifyView/> : <CostRatesCard/>}
+    </div>
+  )
+}
+
+function TemplatesClassifyView(){
   const [rows,setRows]=useState<TemplateRow[]|null>(null)
   const [error,setError]=useState<string|null>(null)
   const [search,setSearch]=useState('')
@@ -1374,7 +1440,6 @@ function TemplatesTab(){
 
   return(
     <div>
-      <CostRatesCard/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
         <MetricCard label="Total Templates" value={fmt(counts.total)}/>
         <MetricCard label="Campaign" value={fmt(counts.campaign)}/>
