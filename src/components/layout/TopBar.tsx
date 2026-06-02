@@ -12,8 +12,7 @@ const PAGE_TITLES: Record<string, { title: string; sub: string }> = {
   funnel:      { title: 'Funnel Analysis',      sub: 'Sent → Delivered → Seen → Clicks → Buyers' },
   revenue:     { title: 'Revenue & Conversion', sub: 'ROI, cost efficiency and revenue intelligence' },
   historical:  { title: 'Historical Trends',    sub: 'Day-over-day performance trends' },
-  templates:   { title: 'Templates',             sub: 'Catalog of campaign & automation templates · classify by type and status' },
-  costs:       { title: 'Cost Rates',             sub: 'Per-template-type cost · drives ROAS calculation when CSV ROAS is missing' },
+  templates:   { title: 'Templates',             sub: 'Catalog of campaign & automation templates · classify by type, status and cost' },
 }
 
 interface TopBarProps {

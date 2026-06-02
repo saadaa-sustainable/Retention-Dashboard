@@ -100,6 +100,73 @@ export async function POST(req: NextRequest) {
     type UpsertRow = { name: string } & Record<string, unknown>
     const rows = data as UpsertRow[]
 
+    // ── Derive calculated_roas for rows that don't have a CSV-provided roas ──
+    // Looks up each row's template_type from creatives and the cost rate from
+    // template_type_costs, computes ROAS = revenue / (delivered * rate), and
+    // stamps it on each row pre-insert. The CSV roas column is never touched —
+    // calculated_roas lives in its own column so the two stay distinguishable.
+    // Rates only affect NEW data being inserted right now; existing DB rows are
+    // never recalculated.
+    if (type === 'campaigns' || type === 'automations') {
+      // Pull the rate card once.
+      const { data: rateRows } = await supabase
+        .from('template_type_costs')
+        .select('template_type, cost_per_message')
+      const rateMap = new Map<string, number>()
+      for (const r of (rateRows || []) as { template_type: string; cost_per_message: number }[]) {
+        rateMap.set(r.template_type, Number(r.cost_per_message))
+      }
+
+      // Build a parent → template_type map from the right creatives table.
+      let typeByParent = new Map<string, string>()
+      if (type === 'campaigns') {
+        const cids = [...new Set(rows.map(r => String((r as Record<string,unknown>).campaign_id || '')).filter(Boolean))]
+        if (cids.length) {
+          const { data: cc } = await supabase
+            .from('campaign_creatives')
+            .select('campaign_id, template_type')
+            .in('campaign_id', cids)
+            .not('template_type', 'is', null)
+          typeByParent = new Map()
+          for (const r of (cc || []) as { campaign_id: string; template_type: string }[]) {
+            if (!typeByParent.has(r.campaign_id)) typeByParent.set(r.campaign_id, r.template_type)
+          }
+        }
+      } else {
+        const names = [...new Set(rows.map(r => String(r.name || '')).filter(Boolean))]
+        if (names.length) {
+          const { data: ac } = await supabase
+            .from('automation_creatives')
+            .select('automation_name, template_type')
+            .in('automation_name', names)
+            .not('template_type', 'is', null)
+          typeByParent = new Map()
+          for (const r of (ac || []) as { automation_name: string; template_type: string }[]) {
+            if (!typeByParent.has(r.automation_name)) typeByParent.set(r.automation_name, r.template_type)
+          }
+        }
+      }
+
+      for (const r of rows) {
+        // Skip rows that already have a CSV-provided roas (don't overwrite).
+        if (r.roas != null && Number(r.roas) > 0) { r.calculated_roas = null; continue }
+        const parent = type === 'campaigns'
+          ? String((r as Record<string,unknown>).campaign_id || '')
+          : String(r.name || '')
+        const ttype = typeByParent.get(parent)
+        const rate = ttype ? rateMap.get(ttype) : undefined
+        const delivered = Number(r.delivered ?? 0)
+        const sales = Number(r.sales ?? 0)
+        const recovered = Number((r as Record<string,unknown>).recovered_amount ?? 0)
+        const revenue = type === 'automations' ? sales + recovered : sales
+        let calc: number | null = null
+        if (rate && rate > 0 && delivered > 0 && revenue > 0) {
+          calc = Math.round((revenue / (delivered * rate)) * 10000) / 10000
+        }
+        r.calculated_roas = calc
+      }
+    }
+
     // For automations and gokwik_carts, ensure each row has a date either from
     // the CSV itself or from the supplied snapshot (single date or range start).
     if ((type === 'automations' || type === 'gokwik_carts') && !snapshotDate) {

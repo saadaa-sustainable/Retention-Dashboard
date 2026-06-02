@@ -1189,12 +1189,13 @@ const TEMPLATE_STATUSES: TemplateStatus[] = ['Active','Paused','Deleted']
 
 type CostRate = { template_type: TemplateType; cost_per_message: number; updated_at: string }
 
-function CostRatesTab(){
+// Compact in-Templates-tab card for editing per-template-type cost rates.
+// Rates here apply to NEW uploads only (calculated at ingest time) — existing
+// rows in the DB are never touched.
+function CostRatesCard(){
   const [rates,setRates]=useState<CostRate[]|null>(null)
   const [drafts,setDrafts]=useState<Record<string,string>>({})
   const [saving,setSaving]=useState<Record<string,'saving'|'saved'|'error'>>({})
-  const [recalcStatus,setRecalcStatus]=useState<'idle'|'running'|'done'|'error'>('idle')
-  const [recalcResult,setRecalcResult]=useState<{campaigns_updated?:number,automations_updated?:number,error?:string}|null>(null)
   const [error,setError]=useState<string|null>(null)
 
   useEffect(()=>{
@@ -1204,8 +1205,6 @@ function CostRatesTab(){
       .catch(e=>setError(e instanceof Error?e.message:'Failed to load'))
   },[])
 
-  // Build complete display rows: ensure every TEMPLATE_TYPE is shown even
-  // if its row doesn't exist yet in the DB.
   const rowsByType=useMemo(()=>{
     const m=new Map<string,CostRate>()
     if(rates) for(const r of rates) m.set(r.template_type, r)
@@ -1227,7 +1226,6 @@ function CostRatesTab(){
       })
       const json=await res.json()
       if(!res.ok) throw new Error(json.error||'Save failed')
-      // Optimistic update of local state
       setRates(prev=>{
         if(!prev) return prev
         const exists=prev.find(r=>r.template_type===template_type)
@@ -1243,58 +1241,18 @@ function CostRatesTab(){
     }
   }
 
-  const recalc=async()=>{
-    setRecalcStatus('running')
-    setRecalcResult(null)
-    try{
-      const res=await fetch('/api/recalc-roas',{method:'POST'})
-      const json=await res.json()
-      if(!res.ok) throw new Error(json.error||'Recalc failed')
-      setRecalcStatus('done')
-      setRecalcResult(json)
-    }catch(e){
-      setRecalcStatus('error')
-      setRecalcResult({error:e instanceof Error?e.message:'Recalc failed'})
-    }
-  }
-
   return(
-    <div className="max-w-[840px]">
-      <Panel className="mb-4"><PanelBody>
-        <PanelTitle>How cost-based ROAS works</PanelTitle>
-        <ol className="text-[12px] text-gray-600 list-decimal pl-5 space-y-1">
-          <li>Set the per-message cost for each template type below.</li>
-          <li>Tag each template with a type in the <span className="font-medium">Templates</span> tab.</li>
-          <li>Click <span className="font-medium">Recalculate ROAS</span> — for any campaign / automation row missing an explicit ROAS in the CSV, the dashboard fills in <code className="bg-gray-100 px-1 rounded text-[11px]">Sales ÷ (Delivered × rate)</code>.</li>
-          <li>Original CSV ROAS values are never overwritten. The derived value lives in a separate <code className="bg-gray-100 px-1 rounded text-[11px]">calculated_roas</code> column and is shown only when the original is empty.</li>
-        </ol>
-      </PanelBody></Panel>
-
-      {error && <div className="bg-red-50 border border-red-200/80 rounded-xl p-3 text-[12px] text-red-700 mb-3">Failed to load: {error}</div>}
-      {!rates && !error && <div className="text-center py-10 text-[12px] text-gray-400">Loading rate card…</div>}
-
+    <Panel className="mb-4">
+      <div className="px-4 py-3 border-b border-black/[0.06]">
+        <PanelTitle>Cost rate per template type</PanelTitle>
+        <p className="text-[11px] text-gray-500 mt-1">
+          Rates apply only to <span className="font-semibold text-gray-700">new uploads after saving</span>. Previously ingested data is not touched. Set rate to <span className="font-mono">0</span> to skip ROAS derivation for that type.
+        </p>
+      </div>
+      {error && <div className="px-4 py-2 bg-red-50 border-b border-red-100 text-[12px] text-red-700">Failed to load: {error}</div>}
+      {!rates && !error && <div className="px-4 py-3 text-[12px] text-gray-400">Loading rate card…</div>}
       {rates && (
-        <Panel>
-          <div className="px-4 py-3 border-b border-black/[0.06] flex items-center justify-between flex-wrap gap-2">
-            <PanelTitle>Cost per delivered message</PanelTitle>
-            <button
-              onClick={recalc}
-              disabled={recalcStatus==='running'}
-              className="h-8 px-3 text-[12px] rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {recalcStatus==='running' ? 'Recalculating…' : 'Recalculate ROAS'}
-            </button>
-          </div>
-          {recalcStatus==='done' && recalcResult && !recalcResult.error && (
-            <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 text-[12px] text-emerald-700">
-              Recalculated · campaigns: {recalcResult.campaigns_updated ?? 0} · automations: {recalcResult.automations_updated ?? 0}
-            </div>
-          )}
-          {recalcStatus==='error' && (
-            <div className="px-4 py-2 bg-red-50 border-b border-red-100 text-[12px] text-red-700">
-              Recalc failed: {recalcResult?.error}
-            </div>
-          )}
+        <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50/60">
               <tr>
@@ -1340,13 +1298,9 @@ function CostRatesTab(){
               )
             })}</tbody>
           </table>
-        </Panel>
+        </div>
       )}
-
-      <p className="text-[11px] text-gray-400 mt-3">
-        Tip: edits save when you click away or press Enter. Click <span className="font-medium">Recalculate ROAS</span> after editing rates to refresh derived ROAS values across campaigns and automations.
-      </p>
-    </div>
+    </Panel>
   )
 }
 
@@ -1420,6 +1374,7 @@ function TemplatesTab(){
 
   return(
     <div>
+      <CostRatesCard/>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-4">
         <MetricCard label="Total Templates" value={fmt(counts.total)}/>
         <MetricCard label="Campaign" value={fmt(counts.campaign)}/>
@@ -1664,7 +1619,7 @@ export default function DashboardPage(){
   }
 
   const tabs:Record<TabId,React.ReactNode>={
-    overview:<OverviewTab/>,campaigns:<CampaignsTab/>,automations:<AutomationsTab/>,templates:<TemplatesTab/>,costs:<CostRatesTab/>,
+    overview:<OverviewTab/>,campaigns:<CampaignsTab/>,automations:<AutomationsTab/>,templates:<TemplatesTab/>,
     segment:<SegmentTab/>,offer:<OfferTab/>,funnel:<FunnelTab/>,revenue:<RevenueTab/>,historical:<HistoricalTab/>
   }
 
