@@ -100,6 +100,16 @@ CREATE TABLE IF NOT EXISTS campaign_creatives (
 );
 CREATE INDEX IF NOT EXISTS campaign_creatives_campaign_id_idx ON campaign_creatives (campaign_id);
 
+-- ── template_type_costs ────────────────────────────────────────────────────
+-- Per-template-type cost (₹ per delivered message). One row per type.
+-- Used to auto-derive calculated_roas on campaigns / automations rows whose
+-- CSV-provided roas is missing — see /api/recalc-roas.
+CREATE TABLE IF NOT EXISTS template_type_costs (
+  template_type     TEXT PRIMARY KEY,
+  cost_per_message  NUMERIC(10,4) NOT NULL DEFAULT 0,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ── raw_exports ────────────────────────────────────────────────────────────
 -- Stores every uploaded CSV file for audit / re-ingestion
 CREATE TABLE IF NOT EXISTS raw_exports (
@@ -213,6 +223,7 @@ ALTER TABLE campaigns            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE automations          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE automation_creatives ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campaign_creatives   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE template_type_costs  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE raw_exports          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE utm_orders           ENABLE ROW LEVEL SECURITY;
 
@@ -221,12 +232,14 @@ DROP POLICY IF EXISTS "allow_read_campaigns"            ON campaigns;
 DROP POLICY IF EXISTS "allow_read_automations"          ON automations;
 DROP POLICY IF EXISTS "allow_read_automation_creatives" ON automation_creatives;
 DROP POLICY IF EXISTS "allow_read_campaign_creatives"   ON campaign_creatives;
+DROP POLICY IF EXISTS "allow_read_template_type_costs"  ON template_type_costs;
 DROP POLICY IF EXISTS "allow_read_raw_exports"          ON raw_exports;
 DROP POLICY IF EXISTS "allow_read_utm_orders"           ON utm_orders;
 CREATE POLICY "allow_read_campaigns"            ON campaigns            FOR SELECT USING (true);
 CREATE POLICY "allow_read_automations"          ON automations          FOR SELECT USING (true);
 CREATE POLICY "allow_read_automation_creatives" ON automation_creatives FOR SELECT USING (true);
 CREATE POLICY "allow_read_campaign_creatives"   ON campaign_creatives   FOR SELECT USING (true);
+CREATE POLICY "allow_read_template_type_costs"  ON template_type_costs  FOR SELECT USING (true);
 CREATE POLICY "allow_read_raw_exports"          ON raw_exports          FOR SELECT USING (true);
 CREATE POLICY "allow_read_utm_orders"           ON utm_orders           FOR SELECT USING (true);
 

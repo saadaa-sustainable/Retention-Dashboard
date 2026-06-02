@@ -33,7 +33,15 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query
     if (error) throw error
 
-    return NextResponse.json({ data, count: data?.length ?? 0 })
+    // Surface a single `roas` to the UI: prefer the CSV-provided value, fall
+    // back to `calculated_roas` (derived from template-type rate card). Both
+    // columns remain in the DB and are returned for transparency.
+    const rows = (data || []).map(r => ({
+      ...r,
+      roas: r.roas ?? r.calculated_roas ?? null,
+    }))
+
+    return NextResponse.json({ data: rows, count: rows.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Server error'
     return NextResponse.json({ error: msg }, { status: 500 })

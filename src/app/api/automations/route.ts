@@ -29,7 +29,14 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query
     if (error) throw error
 
-    return NextResponse.json({ data, count: data?.length ?? 0 })
+    // Prefer CSV-provided roas; fall back to calculated_roas so the frontend
+    // displays a single unified value regardless of source.
+    const rows = (data || []).map(r => ({
+      ...r,
+      roas: r.roas ?? r.calculated_roas ?? null,
+    }))
+
+    return NextResponse.json({ data: rows, count: rows.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Server error'
     return NextResponse.json({ error: msg }, { status: 500 })

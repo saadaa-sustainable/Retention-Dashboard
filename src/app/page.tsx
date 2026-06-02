@@ -1187,6 +1187,169 @@ function RevenueTab(){
 const TEMPLATE_TYPES: TemplateType[] = ['Utility','Marketing','Transactional','RCS','SMS','Email','Authentication']
 const TEMPLATE_STATUSES: TemplateStatus[] = ['Active','Paused','Deleted']
 
+type CostRate = { template_type: TemplateType; cost_per_message: number; updated_at: string }
+
+function CostRatesTab(){
+  const [rates,setRates]=useState<CostRate[]|null>(null)
+  const [drafts,setDrafts]=useState<Record<string,string>>({})
+  const [saving,setSaving]=useState<Record<string,'saving'|'saved'|'error'>>({})
+  const [recalcStatus,setRecalcStatus]=useState<'idle'|'running'|'done'|'error'>('idle')
+  const [recalcResult,setRecalcResult]=useState<{campaigns_updated?:number,automations_updated?:number,error?:string}|null>(null)
+  const [error,setError]=useState<string|null>(null)
+
+  useEffect(()=>{
+    fetch('/api/template-type-costs')
+      .then(r=>r.json())
+      .then(j=>{ if(j.error) setError(j.error); else setRates(j.data||[]) })
+      .catch(e=>setError(e instanceof Error?e.message:'Failed to load'))
+  },[])
+
+  // Build complete display rows: ensure every TEMPLATE_TYPE is shown even
+  // if its row doesn't exist yet in the DB.
+  const rowsByType=useMemo(()=>{
+    const m=new Map<string,CostRate>()
+    if(rates) for(const r of rates) m.set(r.template_type, r)
+    return TEMPLATE_TYPES.map(t => m.get(t) || { template_type:t as TemplateType, cost_per_message:0, updated_at:'' })
+  },[rates])
+
+  const saveRate=async(template_type:string,raw:string)=>{
+    const value=Number(raw)
+    if(!Number.isFinite(value)||value<0){
+      setSaving(s=>({...s,[template_type]:'error'}))
+      return
+    }
+    setSaving(s=>({...s,[template_type]:'saving'}))
+    try{
+      const res=await fetch('/api/template-type-costs',{
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({template_type,cost_per_message:value}),
+      })
+      const json=await res.json()
+      if(!res.ok) throw new Error(json.error||'Save failed')
+      // Optimistic update of local state
+      setRates(prev=>{
+        if(!prev) return prev
+        const exists=prev.find(r=>r.template_type===template_type)
+        if(exists) return prev.map(r=>r.template_type===template_type?{...r,cost_per_message:value,updated_at:new Date().toISOString()}:r)
+        return [...prev, {template_type:template_type as TemplateType, cost_per_message:value, updated_at:new Date().toISOString()}]
+      })
+      setDrafts(d=>{const c={...d}; delete c[template_type]; return c})
+      setSaving(s=>({...s,[template_type]:'saved'}))
+      setTimeout(()=>setSaving(s=>{const c={...s}; delete c[template_type]; return c}),1500)
+    }catch(e){
+      console.error('Save rate failed:',e)
+      setSaving(s=>({...s,[template_type]:'error'}))
+    }
+  }
+
+  const recalc=async()=>{
+    setRecalcStatus('running')
+    setRecalcResult(null)
+    try{
+      const res=await fetch('/api/recalc-roas',{method:'POST'})
+      const json=await res.json()
+      if(!res.ok) throw new Error(json.error||'Recalc failed')
+      setRecalcStatus('done')
+      setRecalcResult(json)
+    }catch(e){
+      setRecalcStatus('error')
+      setRecalcResult({error:e instanceof Error?e.message:'Recalc failed'})
+    }
+  }
+
+  return(
+    <div className="max-w-[840px]">
+      <Panel className="mb-4"><PanelBody>
+        <PanelTitle>How cost-based ROAS works</PanelTitle>
+        <ol className="text-[12px] text-gray-600 list-decimal pl-5 space-y-1">
+          <li>Set the per-message cost for each template type below.</li>
+          <li>Tag each template with a type in the <span className="font-medium">Templates</span> tab.</li>
+          <li>Click <span className="font-medium">Recalculate ROAS</span> — for any campaign / automation row missing an explicit ROAS in the CSV, the dashboard fills in <code className="bg-gray-100 px-1 rounded text-[11px]">Sales ÷ (Delivered × rate)</code>.</li>
+          <li>Original CSV ROAS values are never overwritten. The derived value lives in a separate <code className="bg-gray-100 px-1 rounded text-[11px]">calculated_roas</code> column and is shown only when the original is empty.</li>
+        </ol>
+      </PanelBody></Panel>
+
+      {error && <div className="bg-red-50 border border-red-200/80 rounded-xl p-3 text-[12px] text-red-700 mb-3">Failed to load: {error}</div>}
+      {!rates && !error && <div className="text-center py-10 text-[12px] text-gray-400">Loading rate card…</div>}
+
+      {rates && (
+        <Panel>
+          <div className="px-4 py-3 border-b border-black/[0.06] flex items-center justify-between flex-wrap gap-2">
+            <PanelTitle>Cost per delivered message</PanelTitle>
+            <button
+              onClick={recalc}
+              disabled={recalcStatus==='running'}
+              className="h-8 px-3 text-[12px] rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {recalcStatus==='running' ? 'Recalculating…' : 'Recalculate ROAS'}
+            </button>
+          </div>
+          {recalcStatus==='done' && recalcResult && !recalcResult.error && (
+            <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 text-[12px] text-emerald-700">
+              Recalculated · campaigns: {recalcResult.campaigns_updated ?? 0} · automations: {recalcResult.automations_updated ?? 0}
+            </div>
+          )}
+          {recalcStatus==='error' && (
+            <div className="px-4 py-2 bg-red-50 border-b border-red-100 text-[12px] text-red-700">
+              Recalc failed: {recalcResult?.error}
+            </div>
+          )}
+          <table className="w-full">
+            <thead className="bg-gray-50/60">
+              <tr>
+                <Th right={false}>Template Type</Th>
+                <Th right={false}>Cost / delivered message (₹)</Th>
+                <Th right={false}>Last updated</Th>
+              </tr>
+            </thead>
+            <tbody>{rowsByType.map(r=>{
+              const draft=drafts[r.template_type]
+              const value=draft !== undefined ? draft : String(r.cost_per_message)
+              const state=saving[r.template_type]
+              return (
+                <tr key={r.template_type} className="hover:bg-blue-50/40 transition-colors">
+                  <Td right={false} className="font-semibold text-gray-800">{r.template_type}</Td>
+                  <Td right={false}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400 text-[12px]">₹</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.001"
+                        value={value}
+                        onChange={e=>setDrafts(d=>({...d,[r.template_type]:e.target.value}))}
+                        onBlur={()=>{
+                          if(draft !== undefined && draft !== String(r.cost_per_message)) saveRate(r.template_type, draft)
+                        }}
+                        onKeyDown={e=>{
+                          if(e.key==='Enter') (e.target as HTMLInputElement).blur()
+                          if(e.key==='Escape') setDrafts(d=>{const c={...d}; delete c[r.template_type]; return c})
+                        }}
+                        className="w-28 h-8 px-2 text-[12px] rounded-md border border-black/[0.12] bg-white text-gray-700 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      />
+                      {state==='saving' && <span className="text-[11px] text-gray-400">saving…</span>}
+                      {state==='saved'  && <span className="text-[11px] text-emerald-600">✓ saved</span>}
+                      {state==='error'  && <span className="text-[11px] text-red-600">✗ failed</span>}
+                    </div>
+                  </Td>
+                  <Td right={false} className="text-gray-500 text-[11px] whitespace-nowrap">
+                    {r.updated_at ? new Date(r.updated_at).toLocaleString('en-IN', {dateStyle:'medium', timeStyle:'short'}) : '—'}
+                  </Td>
+                </tr>
+              )
+            })}</tbody>
+          </table>
+        </Panel>
+      )}
+
+      <p className="text-[11px] text-gray-400 mt-3">
+        Tip: edits save when you click away or press Enter. Click <span className="font-medium">Recalculate ROAS</span> after editing rates to refresh derived ROAS values across campaigns and automations.
+      </p>
+    </div>
+  )
+}
+
 function TemplatesTab(){
   const [rows,setRows]=useState<TemplateRow[]|null>(null)
   const [error,setError]=useState<string|null>(null)
@@ -1501,7 +1664,7 @@ export default function DashboardPage(){
   }
 
   const tabs:Record<TabId,React.ReactNode>={
-    overview:<OverviewTab/>,campaigns:<CampaignsTab/>,automations:<AutomationsTab/>,templates:<TemplatesTab/>,
+    overview:<OverviewTab/>,campaigns:<CampaignsTab/>,automations:<AutomationsTab/>,templates:<TemplatesTab/>,costs:<CostRatesTab/>,
     segment:<SegmentTab/>,offer:<OfferTab/>,funnel:<FunnelTab/>,revenue:<RevenueTab/>,historical:<HistoricalTab/>
   }
 
