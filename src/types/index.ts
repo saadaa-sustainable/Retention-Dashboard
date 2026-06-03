@@ -177,6 +177,7 @@ export interface TemplateRow {
   creative_media_link: string | null
   template_type: TemplateType | null
   status: TemplateStatus | null
+  cost_per_message: number | null   // ₹ per delivered message — used to derive calculated_roas
 }
 
 // ── Upload / ingestion ─────────────────────────────────────────────────────

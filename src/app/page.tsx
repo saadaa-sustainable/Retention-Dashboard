@@ -1187,190 +1187,8 @@ function RevenueTab(){
 const TEMPLATE_TYPES: TemplateType[] = ['Utility','Marketing','Transactional','RCS','SMS','Email','Authentication']
 const TEMPLATE_STATUSES: TemplateStatus[] = ['Active','Paused','Deleted']
 
-type CostRate = { template_type: TemplateType; cost_per_message: number; updated_at: string }
-
-// Cost rate editor — explicit Save button at the top. Drafts collected per row
-// and submitted in one batch. Rates apply only to NEW uploads after saving;
-// previously ingested data is never touched.
-function CostRatesCard(){
-  const [rates,setRates]=useState<CostRate[]|null>(null)
-  const [drafts,setDrafts]=useState<Record<string,string>>({})
-  const [savingAll,setSavingAll]=useState(false)
-  const [lastSaveStatus,setLastSaveStatus]=useState<{ok:boolean,msg:string}|null>(null)
-  const [error,setError]=useState<string|null>(null)
-
-  useEffect(()=>{
-    fetch('/api/template-type-costs')
-      .then(r=>r.json())
-      .then(j=>{ if(j.error) setError(j.error); else setRates(j.data||[]) })
-      .catch(e=>setError(e instanceof Error?e.message:'Failed to load'))
-  },[])
-
-  const rowsByType=useMemo(()=>{
-    const m=new Map<string,CostRate>()
-    if(rates) for(const r of rates) m.set(r.template_type, r)
-    return TEMPLATE_TYPES.map(t => m.get(t) || { template_type:t as TemplateType, cost_per_message:0, updated_at:'' })
-  },[rates])
-
-  // Pending changes = drafts whose value differs from the persisted rate.
-  const pending=useMemo(()=>{
-    const out: Array<{template_type:string, value:number}> = []
-    for (const r of rowsByType) {
-      const d=drafts[r.template_type]
-      if (d === undefined) continue
-      const v = Number(d)
-      if (!Number.isFinite(v) || v < 0) continue
-      if (v !== Number(r.cost_per_message)) out.push({template_type:r.template_type, value:v})
-    }
-    return out
-  },[drafts, rowsByType])
-  const dirty=pending.length
-
-  const saveAll=async()=>{
-    if (!dirty) return
-    setSavingAll(true)
-    setLastSaveStatus(null)
-    try{
-      // Fire all PATCHes in parallel. If any fail, surface that.
-      const results=await Promise.all(pending.map(p=>
-        fetch('/api/template-type-costs',{
-          method:'PATCH',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({template_type:p.template_type, cost_per_message:p.value}),
-        }).then(async res=>({ok:res.ok, json: await res.json(), template_type:p.template_type, value:p.value}))
-      ))
-      const failed=results.filter(r=>!r.ok)
-      if (failed.length) throw new Error(`Failed to save ${failed.length} rate${failed.length===1?'':'s'}`)
-
-      // Local-update on success.
-      const now=new Date().toISOString()
-      setRates(prev=>{
-        if (!prev) return prev
-        const m=new Map<string, CostRate>(prev.map(r=>[r.template_type, r]))
-        for (const p of pending) {
-          m.set(p.template_type, { template_type:p.template_type as TemplateType, cost_per_message:p.value, updated_at:now })
-        }
-        return [...m.values()]
-      })
-      setDrafts({})
-      setLastSaveStatus({ok:true, msg:`Saved ${pending.length} rate${pending.length===1?'':'s'}`})
-      setTimeout(()=>setLastSaveStatus(null), 3000)
-    }catch(e){
-      console.error('Save rates failed:',e)
-      setLastSaveStatus({ok:false, msg: e instanceof Error ? e.message : 'Save failed'})
-    } finally {
-      setSavingAll(false)
-    }
-  }
-
-  return(
-    <div>
-      <div className="flex items-start justify-between mb-3 gap-4 flex-wrap">
-        <div>
-          <h3 className="text-[13px] font-semibold text-gray-800">Cost rate per template type</h3>
-          <p className="text-[11px] text-gray-500 mt-1 max-w-[640px]">
-            Rates apply only to <span className="font-semibold text-gray-700">new uploads after saving</span>. Previously ingested data is not touched. Set a rate to <span className="font-mono">0</span> to skip ROAS derivation for that type.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {lastSaveStatus && (
-            <span className={`text-[11px] ${lastSaveStatus.ok ? 'text-emerald-600' : 'text-red-600'}`}>
-              {lastSaveStatus.ok ? '✓ ' : '✗ '}{lastSaveStatus.msg}
-            </span>
-          )}
-          <button
-            onClick={saveAll}
-            disabled={!dirty || savingAll}
-            className={`h-8 px-3 text-[12px] rounded-lg font-medium transition-colors
-              ${(!dirty || savingAll)
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-          >
-            {savingAll ? 'Saving…' : dirty ? `Save ${dirty} change${dirty===1?'':'s'}` : 'Save'}
-          </button>
-        </div>
-      </div>
-
-      {error && <div className="bg-red-50 border border-red-200/80 rounded-xl p-3 text-[12px] text-red-700 mb-3">Failed to load: {error}</div>}
-      {!rates && !error && <div className="text-center py-10 text-[12px] text-gray-400">Loading rate card…</div>}
-
-      {rates && (
-        <Panel>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50/60">
-                <tr>
-                  <Th right={false}>Template Type</Th>
-                  <Th right={false}>Cost / delivered message (₹)</Th>
-                  <Th right={false}>Last updated</Th>
-                </tr>
-              </thead>
-              <tbody>{rowsByType.map(r=>{
-                const draft=drafts[r.template_type]
-                const value=draft !== undefined ? draft : String(r.cost_per_message)
-                const isDirty=draft !== undefined && Number(draft) !== Number(r.cost_per_message)
-                return (
-                  <tr key={r.template_type} className="hover:bg-blue-50/40 transition-colors">
-                    <Td right={false} className="font-semibold text-gray-800">{r.template_type}</Td>
-                    <Td right={false}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400 text-[12px]">₹</span>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.001"
-                          value={value}
-                          onChange={e=>setDrafts(d=>({...d,[r.template_type]:e.target.value}))}
-                          onKeyDown={e=>{
-                            if(e.key==='Enter') { e.preventDefault(); saveAll() }
-                            if(e.key==='Escape') setDrafts(d=>{const c={...d}; delete c[r.template_type]; return c})
-                          }}
-                          className={`w-28 h-8 px-2 text-[12px] rounded-md border bg-white text-gray-700 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100
-                            ${isDirty ? 'border-amber-300 bg-amber-50/40' : 'border-black/[0.12]'}`}
-                        />
-                        {isDirty && <span className="text-[11px] text-amber-600">edited</span>}
-                      </div>
-                    </Td>
-                    <Td right={false} className="text-gray-500 text-[11px] whitespace-nowrap">
-                      {r.updated_at ? new Date(r.updated_at).toLocaleString('en-IN', {dateStyle:'medium', timeStyle:'short'}) : '—'}
-                    </Td>
-                  </tr>
-                )
-              })}</tbody>
-            </table>
-          </div>
-        </Panel>
-      )}
-    </div>
-  )
-}
 
 function TemplatesTab(){
-  const [subTab,setSubTab]=useState<'classify'|'costs'>('classify')
-  return (
-    <div>
-      <div className="inline-flex rounded-lg border border-black/[0.08] bg-white p-0.5 mb-4">
-        {([
-          ['classify','Templates'],
-          ['costs','Cost Rates'],
-        ] as const).map(([id,label])=>(
-          <button
-            key={id}
-            onClick={()=>setSubTab(id)}
-            className={`px-3 h-7 text-[11.5px] rounded-md transition-colors ${
-              subTab===id
-                ? 'bg-blue-50 text-blue-700 font-semibold'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >{label}</button>
-        ))}
-      </div>
-      {subTab==='classify' ? <TemplatesClassifyView/> : <CostRatesCard/>}
-    </div>
-  )
-}
-
-function TemplatesClassifyView(){
   const [rows,setRows]=useState<TemplateRow[]|null>(null)
   const [error,setError]=useState<string|null>(null)
   const [search,setSearch]=useState('')
@@ -1378,6 +1196,7 @@ function TemplatesClassifyView(){
   const [typeFilter,setTypeFilter]=useState<'ALL'|TemplateType|'(unset)'>('ALL')
   const [statusFilter,setStatusFilter]=useState<'ALL'|TemplateStatus|'(unset)'>('ALL')
   const [saving,setSaving]=useState<Record<string,'saving'|'saved'|'error'>>({})
+  const [costDrafts,setCostDrafts]=useState<Record<string,string>>({})
 
   useEffect(()=>{
     fetch('/api/templates')
@@ -1403,12 +1222,14 @@ function TemplatesClassifyView(){
     })
   },[rows,search,retentionFilter,typeFilter,statusFilter])
 
-  const updateField=async(row:TemplateRow,field:'template_type'|'status',value:string)=>{
+  const updateField=async(row:TemplateRow,field:'template_type'|'status'|'cost_per_message',value:string|number|null)=>{
     if(!rows) return
-    const newValue = value || null
+    const newValue: TemplateType | TemplateStatus | number | null =
+      field === 'cost_per_message'
+        ? (value === '' || value == null ? null : Number(value))
+        : ((value as string) || null) as TemplateType | TemplateStatus | null
     const rowKey = `${row.source_table}:${row.id}`
-    // Optimistic update
-    setRows(prev=>prev?prev.map(r=>(r.source_table===row.source_table && r.id===row.id)?{...r,[field]:newValue as TemplateType|TemplateStatus|null}:r):prev)
+    setRows(prev=>prev?prev.map(r=>(r.source_table===row.source_table && r.id===row.id)?{...r,[field]:newValue}:r):prev)
     setSaving(s=>({...s,[rowKey]:'saving'}))
     try{
       const res=await fetch('/api/templates',{
@@ -1486,11 +1307,16 @@ function TemplatesClassifyView(){
                   <Th right={false}>Creative</Th>
                   <Th right={false}>Template Type</Th>
                   <Th right={false}>Status</Th>
+                  <Th right={false}>Cost (₹/msg)</Th>
                 </tr>
               </thead>
               <tbody>{filtered.map(r=>{
                 const rowKey=`${r.source_table}:${r.id}`
                 const saveState=saving[rowKey]
+                const costDraft=costDrafts[rowKey]
+                const costDisplay=costDraft !== undefined
+                  ? costDraft
+                  : (r.cost_per_message == null ? '' : String(r.cost_per_message))
                 return (
                   <tr key={rowKey} className="hover:bg-blue-50/40 transition-colors">
                     <Td right={false}>
@@ -1533,11 +1359,36 @@ function TemplatesClassifyView(){
                         {TEMPLATE_STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
                       </select>
                     </Td>
+                    <Td right={false}>
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-400 text-[11px]">₹</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.001"
+                          value={costDisplay}
+                          placeholder="—"
+                          onChange={e=>setCostDrafts(d=>({...d,[rowKey]:e.target.value}))}
+                          onBlur={()=>{
+                            if(costDraft===undefined) return
+                            const persisted = r.cost_per_message == null ? '' : String(r.cost_per_message)
+                            if(costDraft===persisted){ setCostDrafts(d=>{const c={...d}; delete c[rowKey]; return c}); return }
+                            updateField(r,'cost_per_message',costDraft)
+                            setCostDrafts(d=>{const c={...d}; delete c[rowKey]; return c})
+                          }}
+                          onKeyDown={e=>{
+                            if(e.key==='Enter') (e.target as HTMLInputElement).blur()
+                            if(e.key==='Escape') setCostDrafts(d=>{const c={...d}; delete c[rowKey]; return c})
+                          }}
+                          className="w-20 h-7 text-[11px] px-1.5 rounded-md border border-black/[0.12] bg-white text-gray-700 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                        />
+                      </div>
+                    </Td>
                   </tr>
                 )
               })}
-              {filtered.length===0 && rows.length>0 && <tr><td colSpan={6} className="text-center py-10 text-[12px] text-gray-400">No templates match the current filters.</td></tr>}
-              {rows.length===0 && <tr><td colSpan={6} className="text-center py-10 text-[12px] text-gray-400">No templates uploaded yet. Upload via the Upload Export modal (Auto Creatives / Camp Creatives).</td></tr>}
+              {filtered.length===0 && rows.length>0 && <tr><td colSpan={7} className="text-center py-10 text-[12px] text-gray-400">No templates match the current filters.</td></tr>}
+              {rows.length===0 && <tr><td colSpan={7} className="text-center py-10 text-[12px] text-gray-400">No templates uploaded yet. Upload via the Upload Export modal (Auto Creatives / Camp Creatives).</td></tr>}
               </tbody>
             </table>
           </div>
