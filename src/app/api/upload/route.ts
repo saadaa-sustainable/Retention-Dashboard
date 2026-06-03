@@ -7,6 +7,34 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 const BATCH_SIZE = 500
+// PostgREST URL length limit (~16KB) gets hit fast with `.in('name', [...])`
+// when names are long and contain special chars (`<`, `>`, `=`, `,`, quotes).
+// Keep the dedup lookup in small chunks to stay well under the limit. We still
+// insert in BATCH_SIZE chunks — only the SELECT pre-fetch is throttled.
+const LOOKUP_CHUNK = 80
+
+async function fetchExistingInChunks<T>(
+  selectCols: string,
+  names: string[],
+  dates: string[],
+  table: 'campaigns' | 'automations',
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<{ data: T[]; error: string | null }> {
+  const all: T[] = []
+  // Chunk by names; keep the dates filter on every chunk since it scopes the
+  // search to the right time window. URL length is dominated by names, not dates.
+  for (let i = 0; i < names.length; i += LOOKUP_CHUNK) {
+    const nameChunk = names.slice(i, i + LOOKUP_CHUNK)
+    const { data, error } = await supabase
+      .from(table)
+      .select(selectCols)
+      .in('name', nameChunk)
+      .in('date', dates)
+    if (error) return { data: [], error: error.message || `Lookup failed (${nameChunk.length} names)` }
+    if (data) all.push(...(data as unknown as T[]))
+  }
+  return { data: all, error: null }
+}
 
 // Fields compared to decide "is this row byte-identical to what's already in DB?"
 // Excludes keys (name/date for campaigns, name for automations) and auto fields
@@ -189,21 +217,22 @@ export async function POST(req: NextRequest) {
         const dates = [...new Set(batch.map(r => r.date as string).filter(Boolean))]
 
         // Pre-fetch ALL existing rows for these (name, date) combinations.
-        // Multiple rows per key are now possible, so we group by key.
-        const { data: existing, error: fErr } = await supabase
-          .from('campaigns')
-          .select(selectCols)
-          .in('name', names)
-          .in('date', dates)
+        // Chunked to keep the PostgREST URL under its length limit — campaign
+        // names contain `<`, `>`, `=`, `,` and can be 80+ chars each, so 500
+        // names in a single .in() filter blows past ~16KB and Supabase replies
+        // 400 Bad Request.
+        const { data: existing, error: lookupErr } = await fetchExistingInChunks<Record<string, unknown>>(
+          selectCols, names, dates, 'campaigns', supabase,
+        )
 
-        if (fErr) {
-          errors.push(`Batch ${i + 1}-${i + batch.length} (lookup): ${fErr.message}`)
+        if (lookupErr) {
+          errors.push(`Batch ${i + 1}-${i + batch.length} (lookup): ${lookupErr}`)
           continue
         }
 
         // key → array of existing variants at this (name, date)
         const existingMap = new Map<string, Record<string, unknown>[]>()
-        for (const ex of (existing ?? []) as unknown as Record<string, unknown>[]) {
+        for (const ex of existing) {
           const key = `${ex.name}|${ex.date}`
           const arr = existingMap.get(key) ?? []
           arr.push(ex)
@@ -253,19 +282,18 @@ export async function POST(req: NextRequest) {
         const names = [...new Set(batch.map(r => r.name))]
         const dates = [...new Set(batch.map(r => r.date as string).filter(Boolean))]
 
-        const { data: existing, error: fErr } = await supabase
-          .from('automations')
-          .select(selectCols)
-          .in('name', names)
-          .in('date', dates)
+        // Chunked lookup — same reason as campaigns above.
+        const { data: existing, error: lookupErr } = await fetchExistingInChunks<Record<string, unknown>>(
+          selectCols, names, dates, 'automations', supabase,
+        )
 
-        if (fErr) {
-          errors.push(`Batch ${i + 1}-${i + batch.length} (lookup): ${fErr.message}`)
+        if (lookupErr) {
+          errors.push(`Batch ${i + 1}-${i + batch.length} (lookup): ${lookupErr}`)
           continue
         }
 
         const existingMap = new Map<string, Record<string, unknown>[]>()
-        for (const ex of (existing ?? []) as unknown as Record<string, unknown>[]) {
+        for (const ex of existing) {
           const key = `${ex.name}|${ex.date}`
           const arr = existingMap.get(key) ?? []
           arr.push(ex)
