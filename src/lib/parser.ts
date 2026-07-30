@@ -211,7 +211,7 @@ export function parseCampaignsCSV(raw: string): Omit<Campaign, 'id' | 'ingested_
       offer,
       format,
       channel:       String(row['Channel'] || 'whatsapp').toLowerCase() as Campaign['channel'],
-      date:          String(row['Date'] || '').slice(0, 10),
+      date:          normalizeDateValue(row['Date']) || '',
       sent:          toNum(row['Sent']),
       delivered:     toNum(row['Delivered']),
       seen:          toNum(row['Seen']),
